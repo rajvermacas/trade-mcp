@@ -7,7 +7,7 @@ import logging
 from typing import Any, Dict, List
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
-from mcp.types import Tool, AnyUrl
+from mcp.types import Tool, ServerCapabilities, ToolsCapability
 from pydantic import BaseModel, Field
 from .stock_data import StockDataProvider
 
@@ -124,13 +124,13 @@ class TradingMCPServer:
         """Get list of available resources."""
         return []
     
-    def get_capabilities(self) -> Dict[str, Any]:
+    def get_capabilities(self) -> ServerCapabilities:
         """Get server capabilities."""
-        return {
-            "tools": True,
-            "resources": False,
-            "prompts": False
-        }
+        return ServerCapabilities(
+            tools=ToolsCapability(),
+            resources=None,
+            prompts=None
+        )
     
     async def run(self, transport_uri: str = "stdio://"):
         """Run the MCP server."""
