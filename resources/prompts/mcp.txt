@@ -1,0 +1,110 @@
+Create a MCP for trading. First function in that MCP should be to take input stock name, start date, end date, chart duration like daily, hourly, weekly etc and return the chart  coordinates which the llm can then use it for further questions and answers session with the useIt should mainly support indian stock market.
+
+
+Answers (iteration 1):
+Technical Requirements
+
+  1. Data Source: Which API or data provider would you like to use for Indian stock market data?
+  Options include:
+    - Yahoo Finance (has good Indian stock coverage) -> It should be good
+  2. Stock Identification: How should stocks be identified?
+    - NSE symbols (e.g., RELIANCE, TCS, INFY)
+  3. Chart Data Format: What specific coordinate format would be most useful for LLMs?
+    - OHLC (Open, High, Low, Close) data points?
+    - Include volume data - Yes it should always be returned
+    - Technical indicators -> It can be supported later from different functions in the MCP. There should be a separate function which should take input the indicator name and return the data points of that indicator.
+  4. Time Intervals: Which chart durations should be supported? -> It should be sent as an inpt to the function. By default it should be hourly
+    - Intraday (1min, 5min, 15min, 30min, hourly)
+    - Daily, Weekly, Monthly
+
+  Business Requirements
+
+  5. Data Freshness: Do you need real-time data or is delayed/historical data sufficient? - Fresh data is required
+  6. Usage Patterns: What kind of analysis will the LLM perform with this data?
+    - Technical analysis
+    - Pattern recognition
+    - Price predictions
+    - General market discussions
+    - All of the above
+  7. Additional Features: Beyond the first function, what other trading-related functions would you
+  envision?
+    - Technical indicators calculation
+    - Market news integration
+  8. Rate Limiting: Are there any concerns about API rate limits or data costs? -> Not as such but use the apis reasonably
+
+  Architecture Considerations
+
+  9. Caching: Should the MCP cache frequently requested data to improve performance? - Yes
+  10. Error Handling: How should the system handle:
+    - Invalid stock symbols
+    - Market holidays
+    - Data unavailability
+    - API failures
+    -> For all the above types of exceptions or errors it should be logged properly
+
+Answers (Iteration 2):
+Data Structure & Response Format
+
+  1. Coordinate Format for LLM: For the OHLC data points, what structure would be most useful?
+  // Option A: Array of arrays
+  [[timestamp, open, high, low, close, volume], ...]
+
+  // Option B: Array of objects
+  [{"timestamp": "2024-01-01T10:00:00", "open": 100, "high": 105, "low": 99, "close": 103, "volume":
+  50000}, ...]
+
+  // Option C: Separate arrays
+  {"timestamps": [...], "open": [...], "high": [...], "low": [...], "close": [...], "volume": [...]}
+
+    -> Answer: I am not very sure which format is best. You will have to help here. I will be using this MCP with claude code desktop. According to you which format should be chosen?
+
+  2. NSE Symbol Format: Should we support:
+    - Just the symbol (e.g., "RELIANCE")
+    - Symbol with exchange suffix (e.g., "RELIANCE.NS")
+    - Both formats? -> Answer: Yes it should support both
+
+  Technical Indicators
+
+  3. Indicator Functions: For the technical indicators function, which indicators should we
+  prioritize?
+    - Moving Averages (SMA, EMA)
+    - RSI (Relative Strength Index)
+    - MACD (Moving Average Convergence Divergence)
+    - Bollinger Bands
+    - Others?
+    -> Answer: The LLM should be able to pass you with the indicator name, stock symbol, start and end date in the input and this function should be able to provide the data points. So there is no prioritization as such.
+  4. Indicator Parameters: Should the function accept custom parameters (e.g., period for moving
+  averages)?Answer: Yes
+
+  Market News Integration
+
+  5. News Sources: For market news, what would be useful?
+    - Company-specific news
+    - Market-wide news
+    - Sector news
+    - All of the above?
+    -> Answer: All of the above but remember to create a separate function for this news use case. do not merge it with the stock data or indicator data functions
+  6. News Format: How should news be structured for LLM consumption? -> Answer: You will have to help here. I am not sure. Recommend the best approach.
+
+  Caching Strategy
+
+  7. Cache Duration: How long should different types of data be cached?
+    - Intraday data: 1-5 minutes?
+    - Daily data: 1 hour?
+    - Historical data: 24 hours?
+    -> Answer: Yes it should be fine but remember not to overcomplicate or overkill it. This particular cache feature is not of the utmost priority.
+
+  MCP Interface
+
+  8. Function Names: Would you prefer descriptive function names like:
+    - get_stock_chart_data
+    - calculate_technical_indicator
+    - get_market_news
+    -> Answer: Yes correct
+
+  Or shorter names?
+  9. Error Response Format: How should errors be returned to the LLM?
+    - Structured error objects with codes?
+    - Human-readable error messages?
+    - Both?
+    -> Answer: Both
