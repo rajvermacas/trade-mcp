@@ -218,3 +218,20 @@ talib_data/
 
 # pandas-ta specific temp files
 .pandas_ta/
+
+# News integration specific
+news_cache/
+.news/
+*.news
+*.rss
+news_articles/
+sentiment_cache/
+
+# API response caches
+api_cache/
+response_cache/
+*.cache
+
+# Session and temporary data
+session_data/
+.session/

@@ -146,3 +146,53 @@ class TestTradingMCPServer:
         # Check that calculate_technical_indicator is registered
         tool_names = [tool.name for tool in tools]
         assert "calculate_technical_indicator" in tool_names
+
+    @pytest.mark.asyncio
+    async def test_get_market_news_tool(self):
+        """Test get_market_news as MCP tool."""
+        # RED: This test should fail since get_market_news tool doesn't exist yet
+        result = await self.server.get_market_news(
+            query_type="company",
+            query="RELIANCE",
+            limit=5
+        )
+        
+        assert result["success"] is True
+        assert "articles" in result
+        assert "metadata" in result
+        assert len(result["articles"]) <= 5
+        assert result["metadata"]["query_type"] == "company"
+        
+    @pytest.mark.asyncio
+    async def test_get_market_news_tool_market_query(self):
+        """Test get_market_news tool with market query."""
+        # RED: This test should fail since get_market_news tool doesn't exist yet
+        result = await self.server.get_market_news(
+            query_type="market",
+            limit=10
+        )
+        
+        assert result["success"] is True
+        assert "articles" in result
+        assert "metadata" in result
+        assert result["metadata"]["query_type"] == "market"
+        
+    def test_get_market_news_tool_registration(self):
+        """Test that get_market_news tool is properly registered."""
+        # RED: This test should fail since get_market_news tool doesn't exist yet
+        tools = self.server.get_tools()
+        
+        # Check that get_market_news is registered
+        tool_names = [tool.name for tool in tools]
+        assert "get_market_news" in tool_names
+        
+    def test_get_market_news_tool_invalid_query_type(self):
+        """Test get_market_news tool with invalid query type."""
+        # RED: This test should fail since get_market_news tool doesn't exist yet
+        result = self.server.stock_provider.get_market_news(
+            query_type="invalid_type",
+            query="test"
+        )
+        
+        assert result["success"] is False
+        assert result["error"]["code"] == "INVALID_PARAMETERS"
