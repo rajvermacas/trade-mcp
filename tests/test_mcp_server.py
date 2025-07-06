@@ -9,6 +9,7 @@ import asyncio
 import pandas as pd
 
 from trading_mcp.server import TradingMCPServer
+from mcp.types import ToolsCapability
 
 
 class TestTradingMCPServer:
@@ -84,5 +85,5 @@ class TestTradingMCPServer:
     def test_server_capabilities(self):
         """Test server capabilities."""
         capabilities = self.server.get_capabilities()
-        assert "tools" in capabilities
-        assert capabilities["tools"] is True
+        assert capabilities.tools is not None
+        assert isinstance(capabilities.tools, ToolsCapability)

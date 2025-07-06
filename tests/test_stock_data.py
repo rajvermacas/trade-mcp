@@ -34,7 +34,7 @@ class TestStockDataProvider:
             'Low': [2445.00, 2455.25],
             'Close': [2460.25, 2455.75],
             'Volume': [1250000, 1100000]
-        }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1H'))
+        }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
         
         mock_ticker_instance.history.return_value = sample_data
         
