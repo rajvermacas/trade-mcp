@@ -3,11 +3,12 @@ MCP Server for Trading Data.
 """
 
 import asyncio
+import json
 import logging
 from typing import Any, Dict, List
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
-from mcp.types import Tool, ServerCapabilities, ToolsCapability
+from mcp.types import Tool, ServerCapabilities, ToolsCapability, TextContent
 from pydantic import BaseModel, Field
 from .stock_data import StockDataProvider
 
@@ -41,7 +42,7 @@ class TradingMCPServer:
     def _setup_tools(self):
         """Set up MCP tools."""
         @self.server.call_tool()
-        async def get_stock_chart_data(arguments: GetStockChartDataArgs) -> Dict[str, Any]:
+        async def get_stock_chart_data(arguments: GetStockChartDataArgs) -> List[TextContent]:
             """
             Retrieve OHLC stock chart data for NSE stocks.
             
@@ -49,7 +50,7 @@ class TradingMCPServer:
                 arguments: GetStockChartDataArgs containing symbol, dates, and interval
                 
             Returns:
-                Dictionary with success status, data, and metadata
+                List of text content items with JSON response
             """
             logger.info(f"get_stock_chart_data called with symbol: {arguments.symbol}")
             
@@ -60,7 +61,13 @@ class TradingMCPServer:
                 interval=arguments.interval
             )
             
-            return result
+            # Return in MCP content format
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2)
+                )
+            ]
     
     async def get_stock_chart_data(
         self,
