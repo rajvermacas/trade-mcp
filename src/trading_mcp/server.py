@@ -4,17 +4,22 @@ MCP Server for Trading Data.
 
 import asyncio
 import json
-import logging
+import time
+import uuid
 from typing import Any, Dict, List
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.types import Tool, ServerCapabilities, ToolsCapability, TextContent
 from pydantic import BaseModel, Field
 from .stock_data import StockDataProvider
+from .logging_config import (
+    get_logger, log_mcp_request, log_mcp_response, 
+    log_tool_call, configure_from_env
+)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+configure_from_env()
+logger = get_logger(__name__)
 
 
 class GetStockChartDataArgs(BaseModel):
@@ -37,7 +42,10 @@ class TradingMCPServer:
         self.server = Server("trading-mcp")
         self.stock_provider = StockDataProvider()
         self._setup_tools()
-        logger.info("TradingMCPServer initialized")
+        logger.info(
+            "TradingMCPServer initialized",
+            extra={"component": "server", "action": "init"}
+        )
     
     def _setup_tools(self):
         """Set up MCP tools."""
@@ -52,22 +60,86 @@ class TradingMCPServer:
             Returns:
                 List of text content items with JSON response
             """
-            logger.info(f"get_stock_chart_data called with symbol: {arguments.symbol}")
+            request_id = str(uuid.uuid4())
+            start_time = time.time()
             
-            result = self.stock_provider.get_stock_chart_data(
+            # Log the incoming tool call
+            log_tool_call(
+                logger,
+                tool_name="get_stock_chart_data",
                 symbol=arguments.symbol,
-                start_date=arguments.start_date,
-                end_date=arguments.end_date,
-                interval=arguments.interval
+                params={
+                    "start_date": arguments.start_date,
+                    "end_date": arguments.end_date,
+                    "interval": arguments.interval
+                },
+                request_id=request_id
             )
             
-            # Return in MCP content format
-            return [
-                TextContent(
-                    type="text",
-                    text=json.dumps(result, indent=2)
+            try:
+                result = self.stock_provider.get_stock_chart_data(
+                    symbol=arguments.symbol,
+                    start_date=arguments.start_date,
+                    end_date=arguments.end_date,
+                    interval=arguments.interval,
+                    request_id=request_id
                 )
-            ]
+                
+                response_time = (time.time() - start_time) * 1000
+                success = result.get("success", False)
+                
+                # Log the response
+                log_mcp_response(
+                    logger,
+                    method="get_stock_chart_data",
+                    response_time=response_time,
+                    success=success,
+                    request_id=request_id
+                )
+                
+                # Return in MCP content format
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2)
+                    )
+                ]
+                
+            except Exception as e:
+                response_time = (time.time() - start_time) * 1000
+                
+                logger.error(
+                    f"Tool call failed: {str(e)}",
+                    extra={
+                        "mcp_request_id": request_id,
+                        "tool_name": "get_stock_chart_data",
+                        "symbol": arguments.symbol,
+                        "response_time": response_time,
+                        "error": str(e)
+                    },
+                    exc_info=True
+                )
+                
+                # Return error response
+                error_result = {
+                    "success": False,
+                    "error": {
+                        "code": "TOOL_EXECUTION_ERROR",
+                        "message": f"Failed to execute tool: {str(e)}",
+                        "details": {
+                            "tool": "get_stock_chart_data",
+                            "symbol": arguments.symbol,
+                            "request_id": request_id
+                        }
+                    }
+                }
+                
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(error_result, indent=2)
+                    )
+                ]
     
     async def get_stock_chart_data(
         self,
@@ -141,23 +213,52 @@ class TradingMCPServer:
     
     async def run(self, transport_uri: str = "stdio://"):
         """Run the MCP server."""
-        logger.info(f"Starting Trading MCP Server on {transport_uri}")
+        logger.info(
+            f"Starting Trading MCP Server on {transport_uri}",
+            extra={
+                "component": "server",
+                "action": "start",
+                "transport": transport_uri
+            }
+        )
         
-        if transport_uri == "stdio://":
-            import mcp.server.stdio
-            async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-                await self.server.run(
-                    read_stream,
-                    write_stream,
-                    InitializationOptions(
-                        server_name="trading-mcp",
-                        server_version="1.0.0",
-                        capabilities=self.get_capabilities()
+        try:
+            if transport_uri == "stdio://":
+                import mcp.server.stdio
+                async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+                    logger.info(
+                        "MCP Server ready for stdio communication",
+                        extra={"component": "server", "action": "ready"}
                     )
+                    
+                    await self.server.run(
+                        read_stream,
+                        write_stream,
+                        InitializationOptions(
+                            server_name="trading-mcp",
+                            server_version="1.0.0",
+                            capabilities=self.get_capabilities()
+                        )
+                    )
+            else:
+                # For other transport types (future enhancement)
+                logger.error(
+                    f"Unsupported transport type: {transport_uri}",
+                    extra={"component": "server", "transport": transport_uri}
                 )
-        else:
-            # For other transport types (future enhancement)
-            raise NotImplementedError(f"Transport {transport_uri} not implemented yet")
+                raise NotImplementedError(f"Transport {transport_uri} not implemented yet")
+                
+        except Exception as e:
+            logger.error(
+                f"Server failed to start: {str(e)}",
+                extra={
+                    "component": "server",
+                    "action": "start_failed",
+                    "error": str(e)
+                },
+                exc_info=True
+            )
+            raise
 
 
 async def main():

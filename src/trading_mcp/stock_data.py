@@ -4,13 +4,12 @@ Stock data provider for fetching market data from Yahoo Finance.
 
 import yfinance as yf
 import pandas as pd
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from .logging_config import (
+    get_logger, log_cache_event, log_api_call
+)
 
 
 class StockDataProvider:
@@ -25,14 +24,19 @@ class StockDataProvider:
         """Initialize the stock data provider."""
         self.cache = {}
         self.cache_ttl = 300  # 5 minutes cache TTL
-        logger.info("StockDataProvider initialized")
+        self.logger = get_logger(__name__, {"component": "stock_data_provider"})
+        self.logger.info(
+            "StockDataProvider initialized",
+            extra={"cache_ttl": self.cache_ttl}
+        )
     
     def get_stock_chart_data(
         self,
         symbol: str,
         start_date: str,
         end_date: str,
-        interval: str = "1h"
+        interval: str = "1h",
+        request_id: str = None
     ) -> Dict[str, Any]:
         """
         Retrieve OHLC data for a specified stock symbol.
@@ -42,14 +46,36 @@ class StockDataProvider:
             start_date: Start date in ISO format (YYYY-MM-DD)
             end_date: End date in ISO format (YYYY-MM-DD)
             interval: Time interval for data points
+            request_id: Optional request ID for tracking
             
         Returns:
             Dictionary containing success status, data, and metadata
         """
+        start_time = time.time()
+        
+        self.logger.info(
+            f"Processing stock data request: {symbol} ({start_date} to {end_date}, {interval})",
+            extra={
+                "symbol": symbol,
+                "start_date": start_date,
+                "end_date": end_date,
+                "interval": interval,
+                "mcp_request_id": request_id
+            }
+        )
+        
         try:
             # Validate inputs
-            validation_result = self._validate_inputs(symbol, start_date, end_date, interval)
+            validation_result = self._validate_inputs(symbol, start_date, end_date, interval, request_id)
             if not validation_result["valid"]:
+                self.logger.warning(
+                    f"Input validation failed for {symbol}",
+                    extra={
+                        "symbol": symbol,
+                        "error": validation_result["error"],
+                        "mcp_request_id": request_id
+                    }
+                )
                 return {
                     "success": False,
                     "error": validation_result["error"]
@@ -61,11 +87,34 @@ class StockDataProvider:
             # Check cache first
             cache_key = f"{normalized_symbol}_{start_date}_{end_date}_{interval}"
             if self._is_cache_valid(cache_key):
-                logger.info(f"Cache hit for {cache_key}")
+                log_cache_event(self.logger, cache_key, hit=True, request_id=request_id)
+                
+                response_time = (time.time() - start_time) * 1000
+                self.logger.info(
+                    f"Cache hit for {symbol}, response in {response_time:.2f}ms",
+                    extra={
+                        "symbol": normalized_symbol,
+                        "response_time": response_time,
+                        "cache_hit": True,
+                        "mcp_request_id": request_id
+                    }
+                )
                 return self.cache[cache_key]["data"]
             
+            log_cache_event(self.logger, cache_key, hit=False, request_id=request_id)
+            
             # Fetch data from Yahoo Finance
-            logger.info(f"Fetching data for {normalized_symbol} from {start_date} to {end_date}")
+            api_start_time = time.time()
+            self.logger.info(
+                f"Fetching data from Yahoo Finance: {normalized_symbol}",
+                extra={
+                    "symbol": normalized_symbol,
+                    "date_range": f"{start_date} to {end_date}",
+                    "interval": interval,
+                    "mcp_request_id": request_id
+                }
+            )
+            
             ticker = yf.Ticker(normalized_symbol)
             
             # Get historical data
@@ -75,7 +124,27 @@ class StockDataProvider:
                 interval=interval
             )
             
+            api_response_time = (time.time() - api_start_time) * 1000
+            log_api_call(
+                self.logger,
+                provider="yahoo_finance",
+                symbol=normalized_symbol,
+                response_time=api_response_time,
+                success=not hist_data.empty,
+                request_id=request_id
+            )
+            
             if hist_data.empty:
+                self.logger.warning(
+                    f"No data available for {symbol}",
+                    extra={
+                        "symbol": normalized_symbol,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "interval": interval,
+                        "mcp_request_id": request_id
+                    }
+                )
                 return {
                     "success": False,
                     "error": {
@@ -118,11 +187,32 @@ class StockDataProvider:
             # Cache the response
             self._cache_response(cache_key, response)
             
-            logger.info(f"Successfully fetched {len(data_points)} data points for {normalized_symbol}")
+            total_response_time = (time.time() - start_time) * 1000
+            self.logger.info(
+                f"Successfully fetched {len(data_points)} data points for {symbol} in {total_response_time:.2f}ms",
+                extra={
+                    "symbol": normalized_symbol,
+                    "data_points": len(data_points),
+                    "response_time": total_response_time,
+                    "cache_hit": False,
+                    "mcp_request_id": request_id
+                }
+            )
             return response
             
         except Exception as e:
-            logger.error(f"Error fetching data for {symbol}: {str(e)}")
+            total_response_time = (time.time() - start_time) * 1000
+            self.logger.error(
+                f"Error fetching data for {symbol}: {str(e)}",
+                extra={
+                    "symbol": symbol,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "response_time": total_response_time,
+                    "mcp_request_id": request_id
+                },
+                exc_info=True
+            )
             return {
                 "success": False,
                 "error": {
@@ -130,12 +220,13 @@ class StockDataProvider:
                     "message": f"Failed to fetch data from Yahoo Finance: {str(e)}",
                     "details": {
                         "symbol": symbol,
-                        "error_type": type(e).__name__
+                        "error_type": type(e).__name__,
+                        "request_id": request_id
                     }
                 }
             }
     
-    def _validate_inputs(self, symbol: str, start_date: str, end_date: str, interval: str) -> Dict[str, Any]:
+    def _validate_inputs(self, symbol: str, start_date: str, end_date: str, interval: str, request_id: str = None) -> Dict[str, Any]:
         """Validate input parameters."""
         # Validate symbol
         if not symbol or not isinstance(symbol, str):
@@ -230,3 +321,11 @@ class StockDataProvider:
             "data": response,
             "timestamp": datetime.now()
         }
+        
+        self.logger.debug(
+            f"Cached response for key: {cache_key}",
+            extra={
+                "cache_key": cache_key,
+                "cache_size": len(self.cache)
+            }
+        )

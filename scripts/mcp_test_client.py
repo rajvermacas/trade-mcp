@@ -22,12 +22,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import argparse
 from pathlib import Path
 
-# Configure logging
+# Configure logging for test client
+import os
+log_level = os.getenv('TRADING_MCP_LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Enhanced logging for debugging MCP communication
+logger.info(f"MCP Test Client starting with log level: {log_level}")
 
 
 @dataclass
