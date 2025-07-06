@@ -4,6 +4,7 @@ Following TDD principles: RED -> GREEN -> REFACTOR
 """
 
 import pytest
+import time
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 import pandas as pd
@@ -438,3 +439,187 @@ class TestStockDataProvider:
         assert result["success"] is True
         assert "articles" in result
         assert len(result["articles"]) <= 10  # Default limit from PRD
+
+    # Stage 4: Performance & Reliability Tests
+    def test_advanced_caching_with_size_limits(self):
+        """Test advanced caching with size limits and LRU eviction."""
+        # Mock the _fetch_from_yahoo method to avoid real API calls and ensure cache hits
+        with patch.object(self.provider, '_fetch_from_yahoo') as mock_fetch:
+            # Create sample mock data
+            sample_data = pd.DataFrame({
+                'Open': [2450.50, 2460.25],
+                'High': [2465.75, 2470.50],
+                'Low': [2445.00, 2455.25],
+                'Close': [2460.25, 2455.75],
+                'Volume': [1250000, 1100000]
+            }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
+            
+            mock_fetch.return_value = sample_data
+            
+            # Test cache size limits
+            for i in range(150):  # Exceed default cache limit
+                symbol = f"TEST{i:03d}"
+                result = self.provider.get_stock_chart_data(
+                    symbol=symbol,
+                    start_date="2024-01-01",
+                    end_date="2024-01-02"
+                )
+                
+            # Cache should have evicted old entries
+            cache_stats = self.provider.get_cache_stats()
+            assert cache_stats["size"] <= 100  # Max cache size
+            assert cache_stats["evictions"] > 0  # Should have evicted some entries
+        
+    def test_cache_warming_strategy(self):
+        """Test cache warming for frequently accessed data."""
+        # Mock the _fetch_from_yahoo method to avoid real API calls
+        with patch.object(self.provider, '_fetch_from_yahoo') as mock_fetch:
+            # Create sample mock data
+            sample_data = pd.DataFrame({
+                'Open': [2450.50, 2460.25],
+                'High': [2465.75, 2470.50],
+                'Low': [2445.00, 2455.25],
+                'Close': [2460.25, 2455.75],
+                'Volume': [1250000, 1100000]
+            }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1d'))
+            
+            mock_fetch.return_value = sample_data
+            
+            symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK"]
+            
+            # Warm cache
+            self.provider.warm_cache(symbols, days=7)
+            
+            # Make requests that should hit the cache
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+            
+            for symbol in symbols:
+                self.provider.get_stock_chart_data(symbol, start_date, end_date, "1d")
+            
+            # Check cache hit ratio - after warming and requests, should have hits
+            cache_stats = self.provider.get_cache_stats()
+            assert cache_stats["hit_ratio"] >= 0.5  # Should have warmed cache
+        
+    def test_circuit_breaker_pattern(self):
+        """Test circuit breaker for API failures."""
+        # RED: This test should fail since circuit breaker isn't implemented
+        # Mock consecutive failures
+        with patch.object(self.provider, '_fetch_from_yahoo') as mock_fetch:
+            mock_fetch.side_effect = Exception("API Error")
+            
+            # After 5 failures, circuit breaker should open
+            for i in range(6):
+                result = self.provider.get_stock_chart_data(
+                    symbol="RELIANCE",
+                    start_date="2024-01-01",
+                    end_date="2024-01-02"
+                )
+                
+            # Circuit breaker should be open
+            circuit_stats = self.provider.get_circuit_breaker_stats()
+            assert circuit_stats["state"] == "open"
+            assert circuit_stats["failures"] >= 5
+            
+    def test_retry_with_exponential_backoff(self):
+        """Test retry mechanism with exponential backoff."""
+        # RED: This test should fail since retry mechanism isn't implemented
+        with patch.object(self.provider, '_fetch_from_yahoo') as mock_fetch:
+            # Create sample mock data
+            sample_data = pd.DataFrame({
+                'Open': [2450.50, 2460.25],
+                'High': [2465.75, 2470.50],
+                'Low': [2445.00, 2455.25],
+                'Close': [2460.25, 2455.75],
+                'Volume': [1250000, 1100000]
+            }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
+            
+            # First call fails, second succeeds
+            mock_fetch.side_effect = [
+                Exception("Temporary error"),
+                sample_data
+            ]
+            
+            start_time = time.time()
+            result = self.provider.get_stock_chart_data(
+                symbol="RELIANCE",
+                start_date="2024-01-01",
+                end_date="2024-01-02"
+            )
+            end_time = time.time()
+            
+            # Should have retried and succeeded
+            assert result["success"] is True
+            assert mock_fetch.call_count == 2
+            # Should have waited for backoff
+            assert end_time - start_time > 1.0
+            
+    def test_performance_metrics_collection(self):
+        """Test performance metrics collection."""
+        # RED: This test should fail since metrics collection isn't implemented
+        # Make some requests
+        for i in range(5):
+            result = self.provider.get_stock_chart_data(
+                symbol="RELIANCE",
+                start_date="2024-01-01",
+                end_date="2024-01-02"
+            )
+            
+        # Check metrics
+        metrics = self.provider.get_performance_metrics()
+        assert "total_requests" in metrics
+        assert "average_response_time" in metrics
+        assert "cache_hit_ratio" in metrics
+        assert "error_rate" in metrics
+        assert metrics["total_requests"] == 5
+        
+    def test_memory_usage_optimization(self):
+        """Test memory usage optimization for large datasets."""
+        # RED: This test should fail since memory optimization isn't implemented
+        import psutil
+        import os
+        
+        # Get initial memory usage
+        process = psutil.Process(os.getpid())
+        initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+        
+        # Process large dataset
+        result = self.provider.get_stock_chart_data(
+            symbol="RELIANCE",
+            start_date="2020-01-01",
+            end_date="2024-01-01",
+            interval="1d"
+        )
+        
+        # Memory should not have increased significantly
+        final_memory = process.memory_info().rss / 1024 / 1024  # MB
+        memory_increase = final_memory - initial_memory
+        assert memory_increase < 100  # Should not use more than 100MB
+        
+    def test_connection_pooling(self):
+        """Test connection pooling for external APIs."""
+        # RED: This test should fail since connection pooling isn't implemented
+        # Make concurrent requests
+        import concurrent.futures
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for i in range(20):
+                future = executor.submit(
+                    self.provider.get_stock_chart_data,
+                    symbol="RELIANCE",
+                    start_date="2024-01-01",
+                    end_date="2024-01-02"
+                )
+                futures.append(future)
+                
+            results = [future.result() for future in futures]
+            
+        # All requests should succeed
+        assert all(result["success"] for result in results)
+        
+        # Check connection pool stats
+        pool_stats = self.provider.get_connection_pool_stats()
+        assert "active_connections" in pool_stats
+        assert "max_connections" in pool_stats
+        assert pool_stats["active_connections"] <= pool_stats["max_connections"]

@@ -6,8 +6,12 @@ import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
 import time
+import threading
+import psutil
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
+from cachetools import LRUCache
 from .logging_config import (
     get_logger, log_cache_event, log_api_call
 )
@@ -23,12 +27,48 @@ class StockDataProvider:
     
     def __init__(self):
         """Initialize the stock data provider."""
-        self.cache = {}
+        # Stage 4: Advanced caching with LRU and size limits
+        self.cache = LRUCache(maxsize=100)  # LRU cache with 100 entry limit
         self.cache_ttl = 300  # 5 minutes cache TTL
+        self.cache_stats = {
+            "hits": 0,
+            "misses": 0,
+            "evictions": 0,
+            "size": 0
+        }
+        
+        # Stage 4: Circuit breaker for API resilience
+        self.circuit_breaker = {
+            "state": "closed",  # closed, open, half_open
+            "failures": 0,
+            "last_failure_time": None,
+            "failure_threshold": 5,
+            "recovery_timeout": 30  # seconds
+        }
+        
+        # Stage 4: Performance metrics
+        self.performance_metrics = {
+            "total_requests": 0,
+            "total_response_time": 0,
+            "error_count": 0,
+            "start_time": time.time()
+        }
+        
+        # Stage 4: Connection pool stats (simulated)
+        self.connection_pool_stats = {
+            "active_connections": 0,
+            "max_connections": 10,
+            "total_connections_created": 0
+        }
+        
         self.logger = get_logger(__name__, {"component": "stock_data_provider"})
         self.logger.info(
-            "StockDataProvider initialized",
-            extra={"cache_ttl": self.cache_ttl}
+            "StockDataProvider initialized with Stage 4 features",
+            extra={
+                "cache_ttl": self.cache_ttl,
+                "cache_max_size": 100,
+                "circuit_breaker_threshold": 5
+            }
         )
     
     def get_stock_chart_data(
@@ -91,6 +131,10 @@ class StockDataProvider:
                 log_cache_event(self.logger, cache_key, hit=True, request_id=request_id)
                 
                 response_time = (time.time() - start_time) * 1000
+                
+                # Stage 4: Update performance metrics for cache hits
+                self._update_performance_metrics(response_time, True)
+                
                 self.logger.info(
                     f"Cache hit for {symbol}, response in {response_time:.2f}ms",
                     extra={
@@ -116,13 +160,9 @@ class StockDataProvider:
                 }
             )
             
-            ticker = yf.Ticker(normalized_symbol)
-            
-            # Get historical data
-            hist_data = ticker.history(
-                start=start_date,
-                end=end_date,
-                interval=interval
+            # Use new _fetch_from_yahoo method with circuit breaker and retry logic
+            hist_data = self._fetch_from_yahoo_with_retry(
+                normalized_symbol, start_date, end_date, interval
             )
             
             api_response_time = (time.time() - api_start_time) * 1000
@@ -189,6 +229,10 @@ class StockDataProvider:
             self._cache_response(cache_key, response)
             
             total_response_time = (time.time() - start_time) * 1000
+            
+            # Stage 4: Update performance metrics
+            self._update_performance_metrics(total_response_time, True)
+            
             self.logger.info(
                 f"Successfully fetched {len(data_points)} data points for {symbol} in {total_response_time:.2f}ms",
                 extra={
@@ -203,6 +247,10 @@ class StockDataProvider:
             
         except Exception as e:
             total_response_time = (time.time() - start_time) * 1000
+            
+            # Stage 4: Update performance metrics for errors
+            self._update_performance_metrics(total_response_time, False)
+            
             self.logger.error(
                 f"Error fetching data for {symbol}: {str(e)}",
                 extra={
@@ -562,23 +610,42 @@ class StockDataProvider:
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cache entry is still valid."""
         if cache_key not in self.cache:
+            self.cache_stats["misses"] += 1
             return False
         
         cached_time = self.cache[cache_key]["timestamp"]
-        return (datetime.now() - cached_time).total_seconds() < self.cache_ttl
+        is_valid = (datetime.now() - cached_time).total_seconds() < self.cache_ttl
+        
+        if is_valid:
+            self.cache_stats["hits"] += 1
+        else:
+            self.cache_stats["misses"] += 1
+            # Remove expired entry
+            del self.cache[cache_key]
+        
+        return is_valid
     
     def _cache_response(self, cache_key: str, response: Dict[str, Any]) -> None:
         """Cache the response with timestamp."""
+        # Track evictions when cache is full
+        old_size = len(self.cache)
+        
         self.cache[cache_key] = {
             "data": response,
             "timestamp": datetime.now()
         }
         
+        # Check if an eviction occurred (LRU evicted an old entry)
+        new_size = len(self.cache)
+        if old_size == self.cache.maxsize and new_size == self.cache.maxsize:
+            self.cache_stats["evictions"] += 1
+        
         self.logger.debug(
             f"Cached response for key: {cache_key}",
             extra={
                 "cache_key": cache_key,
-                "cache_size": len(self.cache)
+                "cache_size": len(self.cache),
+                "evictions": self.cache_stats["evictions"]
             }
         )
 
@@ -772,3 +839,182 @@ class StockDataProvider:
             articles.append(article)
         
         return articles
+
+    # Stage 4: Performance & Reliability Methods
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics for monitoring."""
+        current_size = len(self.cache)
+        hit_ratio = 0.0
+        total_requests = self.cache_stats["hits"] + self.cache_stats["misses"]
+        if total_requests > 0:
+            hit_ratio = self.cache_stats["hits"] / total_requests
+        
+        return {
+            "size": current_size,
+            "max_size": self.cache.maxsize,
+            "hits": self.cache_stats["hits"],
+            "misses": self.cache_stats["misses"],
+            "evictions": self.cache_stats["evictions"],
+            "hit_ratio": hit_ratio
+        }
+    
+    def warm_cache(self, symbols: list, days: int = 7) -> None:
+        """Pre-populate cache with frequently accessed data."""
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        
+        self.logger.info(
+            f"Warming cache for {len(symbols)} symbols over {days} days",
+            extra={"symbols": symbols, "days": days}
+        )
+        
+        for symbol in symbols:
+            try:
+                # Warm cache with daily data
+                self.get_stock_chart_data(symbol, start_date, end_date, "1d")
+                time.sleep(0.1)  # Small delay to avoid rate limiting
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to warm cache for {symbol}: {str(e)}",
+                    extra={"symbol": symbol, "error": str(e)}
+                )
+    
+    def get_circuit_breaker_stats(self) -> Dict[str, Any]:
+        """Get circuit breaker statistics."""
+        return {
+            "state": self.circuit_breaker["state"],
+            "failures": self.circuit_breaker["failures"],
+            "failure_threshold": self.circuit_breaker["failure_threshold"],
+            "last_failure_time": self.circuit_breaker["last_failure_time"],
+            "recovery_timeout": self.circuit_breaker["recovery_timeout"]
+        }
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics."""
+        total_requests = self.performance_metrics["total_requests"]
+        average_response_time = 0.0
+        if total_requests > 0:
+            average_response_time = self.performance_metrics["total_response_time"] / total_requests
+        
+        error_rate = 0.0
+        if total_requests > 0:
+            error_rate = self.performance_metrics["error_count"] / total_requests
+        
+        uptime = time.time() - self.performance_metrics["start_time"]
+        
+        cache_stats = self.get_cache_stats()
+        
+        return {
+            "total_requests": total_requests,
+            "average_response_time": average_response_time,
+            "error_rate": error_rate,
+            "uptime_seconds": uptime,
+            "cache_hit_ratio": cache_stats["hit_ratio"]
+        }
+    
+    def get_connection_pool_stats(self) -> Dict[str, Any]:
+        """Get connection pool statistics."""
+        return self.connection_pool_stats.copy()
+    
+    def _fetch_from_yahoo(self, symbol: str, start_date: str, end_date: str, interval: str):
+        """Separate method for Yahoo Finance API calls (for testing)."""
+        try:
+            # Stage 4: Track connection pool usage
+            self.connection_pool_stats["active_connections"] += 1
+            
+            ticker = yf.Ticker(symbol)
+            hist_data = ticker.history(start=start_date, end=end_date, interval=interval)
+            
+            # Stage 4: Record successful API call
+            self._record_circuit_breaker_success()
+            
+            return hist_data
+            
+        except Exception as e:
+            # The circuit breaker failure is now recorded in _fetch_from_yahoo_with_retry
+            raise e
+        finally:
+            # Stage 4: Release connection
+            self.connection_pool_stats["active_connections"] = max(0, 
+                self.connection_pool_stats["active_connections"] - 1)
+    
+    def _is_circuit_breaker_open(self) -> bool:
+        """Check if circuit breaker is open."""
+        if self.circuit_breaker["state"] == "closed":
+            return False
+        
+        if self.circuit_breaker["state"] == "open":
+            # Check if recovery timeout has passed
+            if self.circuit_breaker["last_failure_time"]:
+                time_since_failure = time.time() - self.circuit_breaker["last_failure_time"]
+                if time_since_failure > self.circuit_breaker["recovery_timeout"]:
+                    self.circuit_breaker["state"] = "half_open"
+                    self.logger.info("Circuit breaker moved to half-open state")
+                    return False
+            return True
+        
+        return False  # half_open state allows one test request
+    
+    def _record_circuit_breaker_failure(self):
+        """Record a circuit breaker failure."""
+        self.circuit_breaker["failures"] += 1
+        self.circuit_breaker["last_failure_time"] = time.time()
+        
+        if self.circuit_breaker["failures"] >= self.circuit_breaker["failure_threshold"]:
+            self.circuit_breaker["state"] = "open"
+            self.logger.warning(
+                f"Circuit breaker opened after {self.circuit_breaker['failures']} failures"
+            )
+    
+    def _record_circuit_breaker_success(self):
+        """Record a circuit breaker success."""
+        if self.circuit_breaker["state"] == "half_open":
+            self.circuit_breaker["state"] = "closed"
+            self.circuit_breaker["failures"] = 0
+            self.logger.info("Circuit breaker closed after successful request")
+    
+    def _update_performance_metrics(self, response_time: float, success: bool):
+        """Update performance metrics."""
+        self.performance_metrics["total_requests"] += 1
+        self.performance_metrics["total_response_time"] += response_time
+        
+        if not success:
+            self.performance_metrics["error_count"] += 1
+    
+    def _fetch_from_yahoo_with_retry(self, symbol: str, start_date: str, end_date: str, interval: str, max_retries: int = 3):
+        """Fetch data from Yahoo Finance with retry and exponential backoff."""
+        # Check circuit breaker before any attempts
+        if self._is_circuit_breaker_open():
+            raise Exception("Circuit breaker is open")
+        
+        for attempt in range(max_retries):
+            try:
+                return self._fetch_from_yahoo(symbol, start_date, end_date, interval)
+            except Exception as e:
+                # Record circuit breaker failure on each failed attempt
+                self._record_circuit_breaker_failure()
+                
+                # If circuit breaker is now open, don't retry
+                if self._is_circuit_breaker_open():
+                    raise Exception("Circuit breaker opened during retry attempts")
+                
+                if attempt == max_retries - 1:  # Last attempt
+                    raise e
+                
+                # Exponential backoff: 1s, 2s, 4s
+                backoff_time = 2 ** attempt
+                self.logger.warning(
+                    f"API call failed (attempt {attempt + 1}/{max_retries}), retrying in {backoff_time}s: {str(e)}",
+                    extra={
+                        "symbol": symbol,
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "backoff_time": backoff_time,
+                        "error": str(e)
+                    }
+                )
+                time.sleep(backoff_time)
+        
+        # This should never be reached, but just in case
+        raise Exception("Max retries exceeded")

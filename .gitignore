@@ -235,3 +235,63 @@ response_cache/
 # Session and temporary data
 session_data/
 .session/
+
+# Stage 4: Performance & Reliability specific
+# Performance monitoring data
+performance_metrics/
+.performance/
+metrics_cache/
+*.metrics
+*.perf
+
+# Circuit breaker state files
+circuit_breaker_state/
+.circuit_breaker/
+*.circuit
+
+# Connection pool logs and stats
+connection_pool/
+.pool/
+pool_stats/
+*.pool
+
+# Cache performance data
+cache_stats/
+cache_performance/
+.cache_stats/
+lru_cache/
+*.lru
+
+# Memory profiling and optimization data
+memory_profiles/
+.memory/
+*.prof
+*.memory
+*.heap
+
+# Load testing results
+load_test_results/
+stress_test_data/
+benchmark_results/
+performance_reports/
+*.benchmark
+*.loadtest
+
+# Monitoring and observability data
+monitoring_data/
+observability/
+tracing_data/
+.traces/
+*.trace
+
+# Redis and distributed cache data (for future)
+redis_data/
+.redis/
+*.rdb
+*.aof
+
+# Rate limiting and throttling data
+rate_limit_data/
+.rate_limit/
+throttle_cache/
+*.throttle
