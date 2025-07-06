@@ -87,3 +87,62 @@ class TestTradingMCPServer:
         capabilities = self.server.get_capabilities()
         assert capabilities.tools is not None
         assert isinstance(capabilities.tools, ToolsCapability)
+        
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    @pytest.mark.asyncio
+    async def test_calculate_technical_indicator_tool(self, mock_ticker):
+        """Test calculate_technical_indicator as MCP tool."""
+        # Mock the yfinance ticker to provide sufficient data for RSI calculation
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sample data with enough points for RSI (need 14+ days)
+        sample_data = pd.DataFrame({
+            'Open': [2450.50 + i for i in range(20)],
+            'High': [2465.75 + i for i in range(20)],
+            'Low': [2445.00 + i for i in range(20)],
+            'Close': [2460.25 + i for i in range(20)],
+            'Volume': [1250000] * 20
+        }, index=pd.date_range('2024-01-01', periods=20, freq='D'))
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        # Test MCP tool call for RSI indicator
+        result = await self.server.calculate_technical_indicator(
+            symbol="RELIANCE",
+            indicator="RSI",
+            start_date="2024-01-01",
+            end_date="2024-01-20",
+            interval="1d",
+            params={"period": 14}
+        )
+        
+        assert result["success"] is True
+        assert "data" in result
+        assert result["data"]["indicator"] == "RSI"
+        assert "values" in result["data"]
+        assert "parameters" in result["data"]
+        assert result["data"]["parameters"]["period"] == 14
+        assert "metadata" in result
+        
+    def test_calculate_technical_indicator_tool_invalid_indicator(self):
+        """Test calculate_technical_indicator tool with invalid indicator."""
+        # This test should fail initially (RED phase)
+        # Test the validation logic directly
+        result = self.server.stock_provider.calculate_technical_indicator(
+            symbol="RELIANCE",
+            indicator="INVALID_INDICATOR",
+            start_date="2024-01-01",
+            end_date="2024-01-20"
+        )
+        
+        assert result["success"] is False
+        assert result["error"]["code"] == "INVALID_INDICATOR"
+        
+    def test_calculate_technical_indicator_registration(self):
+        """Test that calculate_technical_indicator tool is properly registered."""
+        tools = self.server.get_tools()
+        
+        # Check that calculate_technical_indicator is registered
+        tool_names = [tool.name for tool in tools]
+        assert "calculate_technical_indicator" in tool_names

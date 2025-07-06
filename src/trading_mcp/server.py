@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.types import Tool, ServerCapabilities, ToolsCapability, TextContent
@@ -28,6 +28,16 @@ class GetStockChartDataArgs(BaseModel):
     start_date: str = Field(description="Start date in ISO format (YYYY-MM-DD)")
     end_date: str = Field(description="End date in ISO format (YYYY-MM-DD)")
     interval: str = Field(default="1h", description="Time interval (1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo)")
+
+
+class CalculateTechnicalIndicatorArgs(BaseModel):
+    """Arguments for calculate_technical_indicator tool."""
+    symbol: str = Field(description="NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS')")
+    indicator: str = Field(description="Technical indicator name (e.g., 'RSI', 'MACD', 'SMA')")
+    start_date: str = Field(description="Start date in ISO format (YYYY-MM-DD)")
+    end_date: str = Field(description="End date in ISO format (YYYY-MM-DD)")
+    interval: str = Field(default="1d", description="Time interval (1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo)")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Optional parameters for the indicator")
 
 
 class TradingMCPServer:
@@ -140,6 +150,104 @@ class TradingMCPServer:
                         text=json.dumps(error_result, indent=2)
                     )
                 ]
+        
+        @self.server.call_tool()
+        async def calculate_technical_indicator(arguments: CalculateTechnicalIndicatorArgs) -> List[TextContent]:
+            """
+            Calculate technical indicators for NSE stocks.
+            
+            Args:
+                arguments: CalculateTechnicalIndicatorArgs containing symbol, indicator, dates, and params
+                
+            Returns:
+                List of text content items with JSON response
+            """
+            request_id = str(uuid.uuid4())
+            start_time = time.time()
+            
+            # Log the incoming tool call
+            log_tool_call(
+                logger,
+                tool_name="calculate_technical_indicator",
+                symbol=arguments.symbol,
+                params={
+                    "indicator": arguments.indicator,
+                    "start_date": arguments.start_date,
+                    "end_date": arguments.end_date,
+                    "interval": arguments.interval,
+                    "params": arguments.params
+                },
+                request_id=request_id
+            )
+            
+            try:
+                result = self.stock_provider.calculate_technical_indicator(
+                    symbol=arguments.symbol,
+                    indicator=arguments.indicator,
+                    start_date=arguments.start_date,
+                    end_date=arguments.end_date,
+                    interval=arguments.interval,
+                    params=arguments.params,
+                    request_id=request_id
+                )
+                
+                response_time = (time.time() - start_time) * 1000
+                success = result.get("success", False)
+                
+                # Log the response
+                log_mcp_response(
+                    logger,
+                    method="calculate_technical_indicator",
+                    response_time=response_time,
+                    success=success,
+                    request_id=request_id
+                )
+                
+                # Return in MCP content format
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2)
+                    )
+                ]
+                
+            except Exception as e:
+                response_time = (time.time() - start_time) * 1000
+                
+                logger.error(
+                    f"Tool call failed: {str(e)}",
+                    extra={
+                        "mcp_request_id": request_id,
+                        "tool_name": "calculate_technical_indicator",
+                        "symbol": arguments.symbol,
+                        "indicator": arguments.indicator,
+                        "response_time": response_time,
+                        "error": str(e)
+                    },
+                    exc_info=True
+                )
+                
+                # Return error response
+                error_result = {
+                    "success": False,
+                    "error": {
+                        "code": "TOOL_EXECUTION_ERROR",
+                        "message": f"Failed to execute tool: {str(e)}",
+                        "details": {
+                            "tool": "calculate_technical_indicator",
+                            "symbol": arguments.symbol,
+                            "indicator": arguments.indicator,
+                            "request_id": request_id
+                        }
+                    }
+                }
+                
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(error_result, indent=2)
+                    )
+                ]
     
     async def get_stock_chart_data(
         self,
@@ -165,6 +273,38 @@ class TradingMCPServer:
             start_date=start_date,
             end_date=end_date,
             interval=interval
+        )
+    
+    async def calculate_technical_indicator(
+        self,
+        symbol: str,
+        indicator: str,
+        start_date: str,
+        end_date: str,
+        interval: str = "1d",
+        params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Direct method for calculating technical indicators (for testing).
+        
+        Args:
+            symbol: Stock symbol
+            indicator: Indicator name
+            start_date: Start date
+            end_date: End date
+            interval: Time interval
+            params: Optional indicator parameters
+            
+        Returns:
+            Technical indicator response
+        """
+        return self.stock_provider.calculate_technical_indicator(
+            symbol=symbol,
+            indicator=indicator,
+            start_date=start_date,
+            end_date=end_date,
+            interval=interval,
+            params=params
         )
     
     def get_tools(self) -> List[Tool]:
@@ -195,6 +335,42 @@ class TradingMCPServer:
                         }
                     },
                     "required": ["symbol", "start_date", "end_date"]
+                }
+            ),
+            Tool(
+                name="calculate_technical_indicator",
+                description="Calculate technical indicators for NSE stocks",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS')"
+                        },
+                        "indicator": {
+                            "type": "string",
+                            "description": "Technical indicator name (e.g., 'RSI', 'MACD', 'SMA')"
+                        },
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date in ISO format (YYYY-MM-DD)"
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "description": "End date in ISO format (YYYY-MM-DD)"
+                        },
+                        "interval": {
+                            "type": "string",
+                            "description": "Time interval (1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo)",
+                            "default": "1d"
+                        },
+                        "params": {
+                            "type": "object",
+                            "description": "Optional parameters for the indicator",
+                            "default": {}
+                        }
+                    },
+                    "required": ["symbol", "indicator", "start_date", "end_date"]
                 }
             )
         ]

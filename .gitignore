@@ -209,3 +209,12 @@ temp/
 # Runtime files
 *.pid
 *.sock
+
+# Technical Analysis specific
+ta_lib/
+talib_data/
+*.indicator
+*.ta_cache
+
+# pandas-ta specific temp files
+.pandas_ta/

@@ -258,3 +258,97 @@ class TestStockDataProvider:
         provider = StockDataProvider()
         assert provider is not None
         assert hasattr(provider, 'get_stock_chart_data')
+        assert hasattr(provider, 'calculate_technical_indicator')
+        
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_calculate_technical_indicator_rsi(self, mock_ticker):
+        """Test technical indicator calculation for RSI."""
+        # Mock the yfinance ticker with sufficient data for RSI
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sample data with 20 points for RSI calculation
+        price_data = [2450.50 + i for i in range(20)]
+        sample_data = pd.DataFrame({
+            'Open': price_data,
+            'High': [p + 10 for p in price_data],
+            'Low': [p - 10 for p in price_data],
+            'Close': price_data,
+            'Volume': [1250000] * 20
+        }, index=pd.date_range('2024-01-01', periods=20, freq='D'))
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        result = self.provider.calculate_technical_indicator(
+            symbol="RELIANCE",
+            indicator="RSI",
+            start_date="2024-01-01",
+            end_date="2024-01-20",
+            interval="1d",
+            params={"period": 14}
+        )
+        
+        assert result["success"] is True
+        assert "data" in result
+        assert result["data"]["indicator"] == "RSI"
+        assert "values" in result["data"]
+        assert "parameters" in result["data"]
+        assert result["data"]["parameters"]["period"] == 14
+        assert "metadata" in result
+        
+    def test_calculate_technical_indicator_invalid_indicator(self):
+        """Test technical indicator with invalid indicator name."""
+        result = self.provider.calculate_technical_indicator(
+            symbol="RELIANCE",
+            indicator="INVALID_INDICATOR",
+            start_date="2024-01-01",
+            end_date="2024-01-20"
+        )
+        
+        assert result["success"] is False
+        assert result["error"]["code"] == "INVALID_INDICATOR"
+        
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_calculate_technical_indicator_sma(self, mock_ticker):
+        """Test technical indicator calculation for SMA."""
+        # Mock the yfinance ticker with sufficient data for SMA
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sample data
+        sample_data = pd.DataFrame({
+            'Open': [2450.50 + i for i in range(25)],
+            'High': [2465.75 + i for i in range(25)],
+            'Low': [2445.00 + i for i in range(25)],
+            'Close': [2460.25 + i for i in range(25)],
+            'Volume': [1250000] * 25
+        }, index=pd.date_range('2024-01-01', periods=25, freq='D'))
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        result = self.provider.calculate_technical_indicator(
+            symbol="RELIANCE",
+            indicator="SMA",
+            start_date="2024-01-01",
+            end_date="2024-01-25",
+            interval="1d",
+            params={"period": 20}
+        )
+        
+        assert result["success"] is True
+        assert result["data"]["indicator"] == "SMA"
+        assert result["data"]["parameters"]["period"] == 20
+        assert len(result["data"]["values"]) > 0
+        
+    def test_calculate_technical_indicator_validation_error(self):
+        """Test technical indicator with validation errors."""
+        # Test invalid date range
+        result = self.provider.calculate_technical_indicator(
+            symbol="RELIANCE",
+            indicator="RSI",
+            start_date="2024-01-02",
+            end_date="2024-01-01"  # end before start
+        )
+        
+        assert result["success"] is False
+        assert result["error"]["code"] == "INVALID_DATE_RANGE"

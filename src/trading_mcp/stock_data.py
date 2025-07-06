@@ -4,6 +4,7 @@ Stock data provider for fetching market data from Yahoo Finance.
 
 import yfinance as yf
 import pandas as pd
+import pandas_ta as ta
 import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
@@ -225,6 +226,257 @@ class StockDataProvider:
                     }
                 }
             }
+    
+    def calculate_technical_indicator(
+        self,
+        symbol: str,
+        indicator: str,
+        start_date: str,
+        end_date: str,
+        interval: str = "1d",
+        params: Optional[Dict[str, Any]] = None,
+        request_id: str = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate technical indicators for a specified stock symbol.
+        
+        Args:
+            symbol: NSE stock symbol (e.g., "RELIANCE" or "RELIANCE.NS")
+            indicator: Indicator name (e.g., "RSI", "MACD", "SMA")
+            start_date: Start date in ISO format (YYYY-MM-DD)
+            end_date: End date in ISO format (YYYY-MM-DD)
+            interval: Time interval for data points (default: "1d")
+            params: Optional parameters for the indicator
+            request_id: Optional request ID for tracking
+            
+        Returns:
+            Dictionary containing success status, indicator data, and metadata
+        """
+        start_time = time.time()
+        params = params or {}
+        
+        self.logger.info(
+            f"Processing technical indicator request: {indicator} for {symbol}",
+            extra={
+                "symbol": symbol,
+                "indicator": indicator,
+                "start_date": start_date,
+                "end_date": end_date,
+                "interval": interval,
+                "params": params,
+                "mcp_request_id": request_id
+            }
+        )
+        
+        try:
+            # Validate inputs
+            validation_result = self._validate_indicator_inputs(
+                symbol, indicator, start_date, end_date, interval, params, request_id
+            )
+            if not validation_result["valid"]:
+                self.logger.warning(
+                    f"Indicator validation failed for {symbol}",
+                    extra={
+                        "symbol": symbol,
+                        "indicator": indicator,
+                        "error": validation_result["error"],
+                        "mcp_request_id": request_id
+                    }
+                )
+                return {
+                    "success": False,
+                    "error": validation_result["error"]
+                }
+            
+            # First get the stock data
+            stock_data_result = self.get_stock_chart_data(
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+                interval=interval,
+                request_id=request_id
+            )
+            
+            if not stock_data_result["success"]:
+                return stock_data_result
+            
+            # Convert to DataFrame for pandas_ta
+            data_points = stock_data_result["data"]
+            if len(data_points) == 0:
+                return {
+                    "success": False,
+                    "error": {
+                        "code": "DATA_UNAVAILABLE",
+                        "message": f"No data available for indicator calculation",
+                        "details": {
+                            "symbol": symbol,
+                            "indicator": indicator
+                        }
+                    }
+                }
+            
+            # Create DataFrame
+            df = pd.DataFrame(data_points)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+            
+            # Rename columns to match pandas_ta expectations
+            df = df.rename(columns={
+                'open': 'Open',
+                'high': 'High', 
+                'low': 'Low',
+                'close': 'Close',
+                'volume': 'Volume'
+            })
+            
+            # Calculate the indicator
+            indicator_result = self._calculate_indicator(df, indicator, params)
+            
+            if indicator_result is None:
+                return {
+                    "success": False,
+                    "error": {
+                        "code": "CALCULATION_ERROR",
+                        "message": f"Failed to calculate {indicator}",
+                        "details": {
+                            "symbol": symbol,
+                            "indicator": indicator,
+                            "params": params
+                        }
+                    }
+                }
+            
+            # Convert result to response format
+            values = []
+            if isinstance(indicator_result, pd.Series):
+                for timestamp, value in indicator_result.dropna().items():
+                    if pd.notna(value):
+                        values.append({
+                            "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%S+05:30"),
+                            "value": round(float(value), 4)
+                        })
+            
+            response = {
+                "success": True,
+                "data": {
+                    "indicator": indicator,
+                    "values": values,
+                    "parameters": params
+                },
+                "metadata": {
+                    "symbol": stock_data_result["metadata"]["symbol"],
+                    "interval": interval,
+                    "data_points": len(values)
+                }
+            }
+            
+            total_response_time = (time.time() - start_time) * 1000
+            self.logger.info(
+                f"Successfully calculated {indicator} for {symbol} in {total_response_time:.2f}ms",
+                extra={
+                    "symbol": symbol,
+                    "indicator": indicator,
+                    "data_points": len(values),
+                    "response_time": total_response_time,
+                    "mcp_request_id": request_id
+                }
+            )
+            return response
+            
+        except Exception as e:
+            total_response_time = (time.time() - start_time) * 1000
+            self.logger.error(
+                f"Error calculating {indicator} for {symbol}: {str(e)}",
+                extra={
+                    "symbol": symbol,
+                    "indicator": indicator,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "response_time": total_response_time,
+                    "mcp_request_id": request_id
+                },
+                exc_info=True
+            )
+            return {
+                "success": False,
+                "error": {
+                    "code": "API_ERROR",
+                    "message": f"Failed to calculate {indicator}: {str(e)}",
+                    "details": {
+                        "symbol": symbol,
+                        "indicator": indicator,
+                        "error_type": type(e).__name__,
+                        "request_id": request_id
+                    }
+                }
+            }
+    
+    def _validate_indicator_inputs(
+        self, 
+        symbol: str, 
+        indicator: str, 
+        start_date: str, 
+        end_date: str, 
+        interval: str,
+        params: Dict[str, Any],
+        request_id: str = None
+    ) -> Dict[str, Any]:
+        """Validate technical indicator input parameters."""
+        # First validate basic inputs using existing method
+        basic_validation = self._validate_inputs(symbol, start_date, end_date, interval, request_id)
+        if not basic_validation["valid"]:
+            return basic_validation
+        
+        # Validate indicator name
+        supported_indicators = ["RSI", "SMA", "EMA", "MACD", "BBANDS", "ATR"]
+        if indicator.upper() not in supported_indicators:
+            return {
+                "valid": False,
+                "error": {
+                    "code": "INVALID_INDICATOR",
+                    "message": f"Indicator '{indicator}' is not supported",
+                    "details": {
+                        "provided_indicator": indicator,
+                        "supported_indicators": supported_indicators
+                    }
+                }
+            }
+        
+        return {"valid": True}
+    
+    def _calculate_indicator(self, df: pd.DataFrame, indicator: str, params: Dict[str, Any]) -> Optional[pd.Series]:
+        """Calculate the specified technical indicator."""
+        indicator = indicator.upper()
+        
+        try:
+            if indicator == "RSI":
+                period = params.get("period", 14)
+                return ta.rsi(df['Close'], length=period)
+            elif indicator == "SMA":
+                period = params.get("period", 20)
+                return ta.sma(df['Close'], length=period)
+            elif indicator == "EMA":
+                period = params.get("period", 20)
+                return ta.ema(df['Close'], length=period)
+            elif indicator == "MACD":
+                fast = params.get("fast", 12)
+                slow = params.get("slow", 26)
+                signal = params.get("signal", 9)
+                macd_result = ta.macd(df['Close'], fast=fast, slow=slow, signal=signal)
+                return macd_result[f'MACD_{fast}_{slow}_{signal}']
+            elif indicator == "BBANDS":
+                period = params.get("period", 20)
+                std = params.get("std", 2)
+                bbands_result = ta.bbands(df['Close'], length=period, std=std)
+                return bbands_result[f'BBM_{period}_{std}']  # Middle band (SMA)
+            elif indicator == "ATR":
+                period = params.get("period", 14)
+                return ta.atr(df['High'], df['Low'], df['Close'], length=period)
+            else:
+                return None
+        except Exception as e:
+            self.logger.error(f"Error calculating {indicator}: {str(e)}", exc_info=True)
+            return None
     
     def _validate_inputs(self, symbol: str, start_date: str, end_date: str, interval: str, request_id: str = None) -> Dict[str, Any]:
         """Validate input parameters."""
