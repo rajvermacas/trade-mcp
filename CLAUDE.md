@@ -62,8 +62,11 @@ pip install -e .
 **Stock Data Provider** (`src/trading_mcp/stock_data.py`):
 - Abstracts Yahoo Finance API integration via yfinance library
 - Implements caching, validation, and error handling
-- Provides NSE stock data with automatic symbol normalization (adds .NS suffix)
+- Provides NSE stock and index data with automatic symbol normalization
+  - Stock symbols: adds .NS suffix (e.g., RELIANCE → RELIANCE.NS)
+  - Index symbols: preserves ^ prefix without .NS suffix (e.g., ^NSEI remains ^NSEI)
 - Returns structured JSON responses with metadata
+- Volume data handling: varies by symbol type and date (stocks always have volume, indices may have zero or non-zero volume depending on market conditions)
 
 ### MCP Protocol Integration
 

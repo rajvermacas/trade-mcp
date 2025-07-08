@@ -169,6 +169,19 @@ Retrieve OHLC stock chart data for NSE stocks.
 }
 ```
 
+### Data Format Notes
+
+**Volume Data**: Volume values vary by symbol type and date:
+- **Stock symbols** (e.g., RELIANCE.NS): Always have trading volume data
+- **Index symbols** (e.g., ^NSEI, ^NSEBANK): Volume data varies by date and market conditions
+  - Some dates may have volume data (e.g., 154000 for ^NSEI on Jan 1, 2024)
+  - Other dates may show zero volume (e.g., 0 for ^NSEI on Jul 1, 2024)
+  - This reflects the actual data from Yahoo Finance and market dynamics
+
+**Symbol Formats**:
+- NSE stocks: `RELIANCE` or `RELIANCE.NS` (auto-normalized to `RELIANCE.NS`)
+- NSE indices: `^NSEI`, `^NSEBANK`, `^NSEIT` (no .NS suffix added)
+
 ## Performance
 
 - **Response Time**: < 3 seconds for all queries

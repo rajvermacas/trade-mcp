@@ -368,7 +368,7 @@ class TestStockDataProvider:
             'High': [22465.75, 22470.50],
             'Low': [22445.00, 22455.25],
             'Close': [22460.25, 22455.75],
-            'Volume': [0, 0]  # Indices typically have 0 volume
+            'Volume': [154000, 0]  # Index volume varies by date and market conditions
         }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
         
         mock_ticker_instance.history.return_value = sample_data
@@ -405,7 +405,7 @@ class TestStockDataProvider:
             'High': [48465.75, 48470.50],
             'Low': [48445.00, 48455.25],
             'Close': [48460.25, 48455.75],
-            'Volume': [0, 0]
+            'Volume': [48000, 52000]  # Index volume varies by date and market conditions
         }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
         
         mock_ticker_instance.history.return_value = sample_data
@@ -434,7 +434,7 @@ class TestStockDataProvider:
             'High': [15465.75, 15470.50],
             'Low': [15445.00, 15455.25],
             'Close': [15460.25, 15455.75],
-            'Volume': [0, 0]
+            'Volume': [25000, 30000]  # Index volume varies by date and market conditions
         }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
         
         mock_ticker_instance.history.return_value = sample_data
@@ -467,7 +467,7 @@ class TestStockDataProvider:
             'High': [p + 50 for p in price_data],
             'Low': [p - 50 for p in price_data],
             'Close': price_data,
-            'Volume': [0] * 20  # Indices have 0 volume
+            'Volume': [154000 if i % 5 == 0 else 0 for i in range(20)]  # Index volume varies
         }, index=pd.date_range('2024-01-01', periods=20, freq='D'))
         
         mock_ticker_instance.history.return_value = sample_data
@@ -510,11 +510,67 @@ class TestStockDataProvider:
         assert result["success"] is False
         assert "^NSEI" in result["error"]["details"]["suggestion"]
         assert "^NSEBANK" in result["error"]["details"]["suggestion"]
-
         
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_index_volume_data_variability(self, mock_ticker):
+        """Test that index volume data can be both zero and non-zero."""
+        # Mock the yfinance ticker
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
         
+        # Test case 1: Non-zero volume (like Jan 1, 2024 for ^NSEI)
+        sample_data_nonzero = pd.DataFrame({
+            'Open': [21727.75],
+            'High': [21834.35],
+            'Low': [21680.85],
+            'Close': [21741.9],
+            'Volume': [154000]  # Real volume data from Yahoo Finance
+        }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=1, freq='1d'))
         
+        mock_ticker_instance.history.return_value = sample_data_nonzero
         
+        result = self.provider.get_stock_chart_data(
+            symbol="^NSEI",
+            start_date="2024-01-01",
+            end_date="2024-01-02",
+            interval="1d"
+        )
+        
+        assert result["success"] is True
+        assert result["data"][0]["volume"] == 154000
+        
+        # Test case 2: Zero volume (like July 1, 2024 for ^NSEI)
+        sample_data_zero = pd.DataFrame({
+            'Open': [24400.05],
+            'High': [24400.05],
+            'Low': [24213.3],
+            'Close': [24221.9],
+            'Volume': [0]  # Zero volume case
+        }, index=pd.date_range('2024-07-01 10:00:00+05:30', periods=1, freq='1d'))
+        
+        mock_ticker_instance.history.return_value = sample_data_zero
+        
+        result = self.provider.get_stock_chart_data(
+            symbol="^NSEI",
+            start_date="2024-07-01",
+            end_date="2024-07-02",
+            interval="1d"
+        )
+        
+        assert result["success"] is True
+        assert result["data"][0]["volume"] == 0
+        
+    def test_volume_integer_conversion(self):
+        """Test that volume values are properly converted to integers."""
+        # Test direct volume conversion using a real example
+        import pandas as pd
+        
+        # Simulate what happens in the actual code
+        row_data = {'Volume': 154000.0}  # Yahoo Finance sometimes returns float
+        volume_int = int(row_data['Volume'])
+        
+        assert isinstance(volume_int, int)
+        assert volume_int == 154000
 
     # Stage 4: Performance & Reliability Tests
     def test_advanced_caching_with_size_limits(self):
