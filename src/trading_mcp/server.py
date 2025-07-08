@@ -78,194 +78,262 @@ class TradingMCPServer:
             return []
         
         @self.server.call_tool()
-        async def get_stock_chart_data(arguments: GetStockChartDataArgs) -> List[TextContent]:
+        async def handle_tool_call(name: str, arguments: dict) -> List[TextContent]:
             """
-            Retrieve OHLC stock chart data for NSE stocks.
+            Handle tool calls by routing to appropriate handlers based on tool name.
             
             Args:
-                arguments: GetStockChartDataArgs containing symbol, dates, and interval
+                name: Tool name to call
+                arguments: Tool arguments dictionary
                 
             Returns:
                 List of text content items with JSON response
             """
-            request_id = str(uuid.uuid4())
-            start_time = time.time()
-            
-            # Log the incoming tool call
-            log_tool_call(
-                logger,
-                tool_name="get_stock_chart_data",
-                symbol=arguments.symbol,
-                params={
-                    "start_date": arguments.start_date,
-                    "end_date": arguments.end_date,
-                    "interval": arguments.interval
-                },
-                request_id=request_id
-            )
-            
-            try:
-                result = self.stock_provider.get_stock_chart_data(
-                    symbol=arguments.symbol,
-                    start_date=arguments.start_date,
-                    end_date=arguments.end_date,
-                    interval=arguments.interval,
-                    request_id=request_id
-                )
-                
-                response_time = (time.time() - start_time) * 1000
-                success = result.get("success", False)
-                
-                # Log the response
-                log_mcp_response(
-                    logger,
-                    method="get_stock_chart_data",
-                    response_time=response_time,
-                    success=success,
-                    request_id=request_id
-                )
-                
-                # Return in MCP content format
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(result, indent=2)
-                    )
-                ]
-                
-            except Exception as e:
-                response_time = (time.time() - start_time) * 1000
-                
-                logger.error(
-                    f"Tool call failed: {str(e)}",
-                    extra={
-                        "mcp_request_id": request_id,
-                        "tool_name": "get_stock_chart_data",
-                        "symbol": arguments.symbol,
-                        "response_time": response_time,
-                        "error": str(e)
-                    },
-                    exc_info=True
-                )
-                
-                # Return error response
+            if name == "get_stock_chart_data":
+                return await self._handle_get_stock_chart_data(arguments)
+            elif name == "calculate_technical_indicator":
+                return await self._handle_calculate_technical_indicator(arguments)
+            else:
                 error_result = {
                     "success": False,
                     "error": {
-                        "code": "TOOL_EXECUTION_ERROR",
-                        "message": f"Failed to execute tool: {str(e)}",
-                        "details": {
-                            "tool": "get_stock_chart_data",
-                            "symbol": arguments.symbol,
-                            "request_id": request_id
-                        }
+                        "code": "UNKNOWN_TOOL",
+                        "message": f"Unknown tool: {name}",
+                        "details": {"tool_name": name}
                     }
                 }
-                
                 return [
                     TextContent(
                         type="text",
                         text=json.dumps(error_result, indent=2)
                     )
                 ]
+    
+    async def _handle_get_stock_chart_data(self, arguments: dict) -> List[TextContent]:
+        """
+        Handle get_stock_chart_data tool calls.
         
-        @self.server.call_tool()
-        async def calculate_technical_indicator(arguments: CalculateTechnicalIndicatorArgs) -> List[TextContent]:
-            """
-            Calculate technical indicators for NSE stocks.
-            
-            Args:
-                arguments: CalculateTechnicalIndicatorArgs containing symbol, indicator, dates, and params
+        Args:
+            arguments: Tool arguments dictionary
                 
-            Returns:
-                List of text content items with JSON response
-            """
-            request_id = str(uuid.uuid4())
-            start_time = time.time()
-            
-            # Log the incoming tool call
-            log_tool_call(
-                logger,
-                tool_name="calculate_technical_indicator",
-                symbol=arguments.symbol,
-                params={
-                    "indicator": arguments.indicator,
-                    "start_date": arguments.start_date,
-                    "end_date": arguments.end_date,
-                    "interval": arguments.interval,
-                    "params": arguments.params
-                },
+        Returns:
+            List of text content items with JSON response
+        """
+        try:
+            # Validate arguments using Pydantic model
+            validated_args = GetStockChartDataArgs(**arguments)
+        except Exception as e:
+            error_result = {
+                "success": False,
+                "error": {
+                    "code": "INVALID_ARGUMENTS",
+                    "message": f"Invalid arguments for get_stock_chart_data: {str(e)}",
+                    "details": {"arguments": arguments}
+                }
+            }
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(error_result, indent=2)
+                )
+            ]
+        
+        request_id = str(uuid.uuid4())
+        start_time = time.time()
+        
+        # Log the incoming tool call
+        log_tool_call(
+            logger,
+            tool_name="get_stock_chart_data",
+            symbol=validated_args.symbol,
+            params={
+                "start_date": validated_args.start_date,
+                "end_date": validated_args.end_date,
+                "interval": validated_args.interval
+            },
+            request_id=request_id
+        )
+        
+        try:
+            result = self.stock_provider.get_stock_chart_data(
+                symbol=validated_args.symbol,
+                start_date=validated_args.start_date,
+                end_date=validated_args.end_date,
+                interval=validated_args.interval,
                 request_id=request_id
             )
             
-            try:
-                result = self.stock_provider.calculate_technical_indicator(
-                    symbol=arguments.symbol,
-                    indicator=arguments.indicator,
-                    start_date=arguments.start_date,
-                    end_date=arguments.end_date,
-                    interval=arguments.interval,
-                    params=arguments.params,
-                    request_id=request_id
+            response_time = (time.time() - start_time) * 1000
+            success = result.get("success", False)
+            
+            # Log the response
+            log_mcp_response(
+                logger,
+                method="get_stock_chart_data",
+                response_time=response_time,
+                success=success,
+                request_id=request_id
+            )
+            
+            # Return in MCP content format
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2)
                 )
-                
-                response_time = (time.time() - start_time) * 1000
-                success = result.get("success", False)
-                
-                # Log the response
-                log_mcp_response(
-                    logger,
-                    method="calculate_technical_indicator",
-                    response_time=response_time,
-                    success=success,
-                    request_id=request_id
-                )
-                
-                # Return in MCP content format
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(result, indent=2)
-                    )
-                ]
-                
-            except Exception as e:
-                response_time = (time.time() - start_time) * 1000
-                
-                logger.error(
-                    f"Tool call failed: {str(e)}",
-                    extra={
-                        "mcp_request_id": request_id,
-                        "tool_name": "calculate_technical_indicator",
-                        "symbol": arguments.symbol,
-                        "indicator": arguments.indicator,
-                        "response_time": response_time,
-                        "error": str(e)
-                    },
-                    exc_info=True
-                )
-                
-                # Return error response
-                error_result = {
-                    "success": False,
-                    "error": {
-                        "code": "TOOL_EXECUTION_ERROR",
-                        "message": f"Failed to execute tool: {str(e)}",
-                        "details": {
-                            "tool": "calculate_technical_indicator",
-                            "symbol": arguments.symbol,
-                            "indicator": arguments.indicator,
-                            "request_id": request_id
-                        }
+            ]
+            
+        except Exception as e:
+            response_time = (time.time() - start_time) * 1000
+            
+            logger.error(
+                f"Tool call failed: {str(e)}",
+                extra={
+                    "mcp_request_id": request_id,
+                    "tool_name": "get_stock_chart_data",
+                    "symbol": validated_args.symbol,
+                    "response_time": response_time,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
+            
+            # Return error response
+            error_result = {
+                "success": False,
+                "error": {
+                    "code": "TOOL_EXECUTION_ERROR",
+                    "message": f"Failed to execute tool: {str(e)}",
+                    "details": {
+                        "tool": "get_stock_chart_data",
+                        "symbol": validated_args.symbol,
+                        "request_id": request_id
                     }
                 }
+            }
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(error_result, indent=2)
+                )
+            ]
+    
+    async def _handle_calculate_technical_indicator(self, arguments: dict) -> List[TextContent]:
+        """
+        Handle calculate_technical_indicator tool calls.
+        
+        Args:
+            arguments: Tool arguments dictionary
                 
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(error_result, indent=2)
-                    )
-                ]
+        Returns:
+            List of text content items with JSON response
+        """
+        try:
+            # Validate arguments using Pydantic model
+            validated_args = CalculateTechnicalIndicatorArgs(**arguments)
+        except Exception as e:
+            error_result = {
+                "success": False,
+                "error": {
+                    "code": "INVALID_ARGUMENTS",
+                    "message": f"Invalid arguments for calculate_technical_indicator: {str(e)}",
+                    "details": {"arguments": arguments}
+                }
+            }
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(error_result, indent=2)
+                )
+            ]
+        
+        request_id = str(uuid.uuid4())
+        start_time = time.time()
+        
+        # Log the incoming tool call
+        log_tool_call(
+            logger,
+            tool_name="calculate_technical_indicator",
+            symbol=validated_args.symbol,
+            params={
+                "indicator": validated_args.indicator,
+                "start_date": validated_args.start_date,
+                "end_date": validated_args.end_date,
+                "interval": validated_args.interval,
+                "params": validated_args.params
+            },
+            request_id=request_id
+        )
+        
+        try:
+            result = self.stock_provider.calculate_technical_indicator(
+                symbol=validated_args.symbol,
+                indicator=validated_args.indicator,
+                start_date=validated_args.start_date,
+                end_date=validated_args.end_date,
+                interval=validated_args.interval,
+                params=validated_args.params,
+                request_id=request_id
+            )
+            
+            response_time = (time.time() - start_time) * 1000
+            success = result.get("success", False)
+            
+            # Log the response
+            log_mcp_response(
+                logger,
+                method="calculate_technical_indicator",
+                response_time=response_time,
+                success=success,
+                request_id=request_id
+            )
+            
+            # Return in MCP content format
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2)
+                )
+            ]
+            
+        except Exception as e:
+            response_time = (time.time() - start_time) * 1000
+            
+            logger.error(
+                f"Tool call failed: {str(e)}",
+                extra={
+                    "mcp_request_id": request_id,
+                    "tool_name": "calculate_technical_indicator",
+                    "symbol": validated_args.symbol,
+                    "indicator": validated_args.indicator,
+                    "response_time": response_time,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
+            
+            # Return error response
+            error_result = {
+                "success": False,
+                "error": {
+                    "code": "TOOL_EXECUTION_ERROR",
+                    "message": f"Failed to execute tool: {str(e)}",
+                    "details": {
+                        "tool": "calculate_technical_indicator",
+                        "symbol": validated_args.symbol,
+                        "indicator": validated_args.indicator,
+                        "request_id": request_id
+                    }
+                }
+            }
+            
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(error_result, indent=2)
+                )
+            ]
         
     
     async def fetch_stock_chart_data(
