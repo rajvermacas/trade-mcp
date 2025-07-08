@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "trading-mcp"
+name = "trading_mcp"
 version = "1.0.0"
 description = "MCP server for Indian stock market trading data"
 readme = "README.md"

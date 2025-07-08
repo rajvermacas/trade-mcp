@@ -67,6 +67,22 @@ class TradingMCPServer:
     
     def _setup_tools(self):
         """Set up MCP tools."""
+        # Register list handlers
+        @self.server.list_tools()
+        async def handle_list_tools() -> List[Tool]:
+            """List available tools."""
+            return self.get_tools()
+        
+        @self.server.list_resources()
+        async def handle_list_resources() -> List[Dict[str, Any]]:
+            """List available resources."""
+            return self.get_resources()
+        
+        @self.server.list_prompts()
+        async def handle_list_prompts() -> List[Dict[str, Any]]:
+            """List available prompts."""
+            return []
+        
         @self.server.call_tool()
         async def get_stock_chart_data(arguments: GetStockChartDataArgs) -> List[TextContent]:
             """
@@ -351,7 +367,7 @@ class TradingMCPServer:
                     )
                 ]
     
-    async def get_stock_chart_data(
+    async def fetch_stock_chart_data(
         self,
         symbol: str,
         start_date: str,
@@ -377,7 +393,7 @@ class TradingMCPServer:
             interval=interval
         )
     
-    async def calculate_technical_indicator(
+    async def compute_technical_indicator(
         self,
         symbol: str,
         indicator: str,
@@ -409,7 +425,7 @@ class TradingMCPServer:
             params=params
         )
     
-    async def get_market_news(
+    async def fetch_market_news(
         self,
         query_type: str,
         query: Optional[str] = None,
