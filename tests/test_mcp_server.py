@@ -23,7 +23,7 @@ class TestTradingMCPServer:
         """Test that TradingMCPServer initializes correctly."""
         server = TradingMCPServer()
         assert server is not None
-        assert hasattr(server, 'get_stock_chart_data')
+        assert hasattr(server, 'fetch_stock_chart_data')
         
     @patch('trading_mcp.stock_data.yf.Ticker')
     @pytest.mark.asyncio
@@ -45,7 +45,7 @@ class TestTradingMCPServer:
         mock_ticker_instance.history.return_value = sample_data
         
         # Test MCP tool call
-        result = await self.server.get_stock_chart_data(
+        result = await self.server.fetch_stock_chart_data(
             symbol="RELIANCE",
             start_date="2024-01-01",
             end_date="2024-01-02",
@@ -108,7 +108,7 @@ class TestTradingMCPServer:
         mock_ticker_instance.history.return_value = sample_data
         
         # Test MCP tool call for RSI indicator
-        result = await self.server.calculate_technical_indicator(
+        result = await self.server.compute_technical_indicator(
             symbol="RELIANCE",
             indicator="RSI",
             start_date="2024-01-01",
@@ -147,52 +147,6 @@ class TestTradingMCPServer:
         tool_names = [tool.name for tool in tools]
         assert "calculate_technical_indicator" in tool_names
 
-    @pytest.mark.asyncio
-    async def test_get_market_news_tool(self):
-        """Test get_market_news as MCP tool."""
-        # RED: This test should fail since get_market_news tool doesn't exist yet
-        result = await self.server.get_market_news(
-            query_type="company",
-            query="RELIANCE",
-            limit=5
-        )
         
-        assert result["success"] is True
-        assert "articles" in result
-        assert "metadata" in result
-        assert len(result["articles"]) <= 5
-        assert result["metadata"]["query_type"] == "company"
         
-    @pytest.mark.asyncio
-    async def test_get_market_news_tool_market_query(self):
-        """Test get_market_news tool with market query."""
-        # RED: This test should fail since get_market_news tool doesn't exist yet
-        result = await self.server.get_market_news(
-            query_type="market",
-            limit=10
-        )
         
-        assert result["success"] is True
-        assert "articles" in result
-        assert "metadata" in result
-        assert result["metadata"]["query_type"] == "market"
-        
-    def test_get_market_news_tool_registration(self):
-        """Test that get_market_news tool is properly registered."""
-        # RED: This test should fail since get_market_news tool doesn't exist yet
-        tools = self.server.get_tools()
-        
-        # Check that get_market_news is registered
-        tool_names = [tool.name for tool in tools]
-        assert "get_market_news" in tool_names
-        
-    def test_get_market_news_tool_invalid_query_type(self):
-        """Test get_market_news tool with invalid query type."""
-        # RED: This test should fail since get_market_news tool doesn't exist yet
-        result = self.server.stock_provider.get_market_news(
-            query_type="invalid_type",
-            query="test"
-        )
-        
-        assert result["success"] is False
-        assert result["error"]["code"] == "INVALID_PARAMETERS"

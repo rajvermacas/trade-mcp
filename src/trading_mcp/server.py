@@ -40,12 +40,6 @@ class CalculateTechnicalIndicatorArgs(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict, description="Optional parameters for the indicator")
 
 
-class GetMarketNewsArgs(BaseModel):
-    """Arguments for get_market_news tool."""
-    query_type: str = Field(description="Type of query: 'company', 'market', or 'sector'")
-    query: Optional[str] = Field(default=None, description="Search query (company symbol, sector name, etc.)")
-    start_date: Optional[str] = Field(default=None, description="Start date filter in ISO format (YYYY-MM-DD)")
-    limit: int = Field(default=10, description="Maximum number of articles to return (1-100)")
 
 
 class TradingMCPServer:
@@ -273,99 +267,6 @@ class TradingMCPServer:
                     )
                 ]
         
-        @self.server.call_tool()
-        async def get_market_news(arguments: GetMarketNewsArgs) -> List[TextContent]:
-            """
-            Retrieve market news articles.
-            
-            Args:
-                arguments: GetMarketNewsArgs containing query parameters
-                
-            Returns:
-                List of text content items with JSON response
-            """
-            request_id = str(uuid.uuid4())
-            start_time = time.time()
-            
-            # Log the incoming tool call
-            log_tool_call(
-                logger,
-                tool_name="get_market_news",
-                symbol=arguments.query or "N/A",
-                params={
-                    "query_type": arguments.query_type,
-                    "query": arguments.query,
-                    "start_date": arguments.start_date,
-                    "limit": arguments.limit
-                },
-                request_id=request_id
-            )
-            
-            try:
-                result = self.stock_provider.get_market_news(
-                    query_type=arguments.query_type,
-                    query=arguments.query,
-                    start_date=arguments.start_date,
-                    limit=arguments.limit,
-                    request_id=request_id
-                )
-                
-                response_time = (time.time() - start_time) * 1000
-                success = result.get("success", False)
-                
-                # Log the response
-                log_mcp_response(
-                    logger,
-                    method="get_market_news",
-                    response_time=response_time,
-                    success=success,
-                    request_id=request_id
-                )
-                
-                # Return in MCP content format
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(result, indent=2)
-                    )
-                ]
-                
-            except Exception as e:
-                response_time = (time.time() - start_time) * 1000
-                
-                logger.error(
-                    f"Tool call failed: {str(e)}",
-                    extra={
-                        "mcp_request_id": request_id,
-                        "tool_name": "get_market_news",
-                        "query_type": arguments.query_type,
-                        "query": arguments.query,
-                        "response_time": response_time,
-                        "error": str(e)
-                    },
-                    exc_info=True
-                )
-                
-                # Return error response
-                error_result = {
-                    "success": False,
-                    "error": {
-                        "code": "TOOL_EXECUTION_ERROR",
-                        "message": f"Failed to execute tool: {str(e)}",
-                        "details": {
-                            "tool": "get_market_news",
-                            "query_type": arguments.query_type,
-                            "request_id": request_id
-                        }
-                    }
-                }
-                
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(error_result, indent=2)
-                    )
-                ]
     
     async def fetch_stock_chart_data(
         self,
@@ -425,31 +326,6 @@ class TradingMCPServer:
             params=params
         )
     
-    async def fetch_market_news(
-        self,
-        query_type: str,
-        query: Optional[str] = None,
-        start_date: Optional[str] = None,
-        limit: int = 10
-    ) -> Dict[str, Any]:
-        """
-        Direct method for getting market news (for testing).
-        
-        Args:
-            query_type: Type of query
-            query: Optional search query
-            start_date: Optional start date filter
-            limit: Maximum number of articles
-            
-        Returns:
-            News response
-        """
-        return self.stock_provider.get_market_news(
-            query_type=query_type,
-            query=query,
-            start_date=start_date,
-            limit=limit
-        )
     
     def get_tools(self) -> List[Tool]:
         """Get list of available tools."""
@@ -517,36 +393,6 @@ class TradingMCPServer:
                     "required": ["symbol", "indicator", "start_date", "end_date"]
                 }
             ),
-            Tool(
-                name="get_market_news",
-                description="Retrieve market news articles",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "query_type": {
-                            "type": "string",
-                            "description": "Type of query: 'company', 'market', or 'sector'",
-                            "enum": ["company", "market", "sector"]
-                        },
-                        "query": {
-                            "type": "string",
-                            "description": "Search query (company symbol, sector name, etc.)"
-                        },
-                        "start_date": {
-                            "type": "string",
-                            "description": "Start date filter in ISO format (YYYY-MM-DD)"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum number of articles to return (1-100)",
-                            "default": 10,
-                            "minimum": 1,
-                            "maximum": 100
-                        }
-                    },
-                    "required": ["query_type"]
-                }
-            )
         ]
     
     def get_resources(self) -> List[Dict[str, Any]]:

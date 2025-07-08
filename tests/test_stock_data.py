@@ -354,91 +354,10 @@ class TestStockDataProvider:
         assert result["success"] is False
         assert result["error"]["code"] == "INVALID_DATE_RANGE"
 
-    def test_get_market_news_company_query(self):
-        """Test get_market_news with company query type."""
-        # RED: This test should fail since get_market_news doesn't exist yet
-        result = self.provider.get_market_news(
-            query_type="company",
-            query="RELIANCE",
-            limit=5
-        )
         
-        assert result["success"] is True
-        assert "articles" in result
-        assert "metadata" in result
-        assert len(result["articles"]) <= 5
         
-        # Check article structure
-        if result["articles"]:
-            article = result["articles"][0]
-            assert "title" in article
-            assert "summary" in article
-            assert "source" in article
-            assert "published_date" in article
-            assert "url" in article
-            assert "sentiment" in article
-            assert "relevance_score" in article
-            assert "category" in article
-            assert "tags" in article
-            
-        # Check metadata structure
-        metadata = result["metadata"]
-        assert "total_results" in metadata
-        assert "query_type" in metadata
-        assert metadata["query_type"] == "company"
         
-    def test_get_market_news_market_query(self):
-        """Test get_market_news with market query type."""
-        # RED: This test should fail since get_market_news doesn't exist yet
-        result = self.provider.get_market_news(
-            query_type="market",
-            limit=10
-        )
         
-        assert result["success"] is True
-        assert "articles" in result
-        assert "metadata" in result
-        assert len(result["articles"]) <= 10
-        assert result["metadata"]["query_type"] == "market"
-        
-    def test_get_market_news_sector_query(self):
-        """Test get_market_news with sector query type."""
-        # RED: This test should fail since get_market_news doesn't exist yet
-        result = self.provider.get_market_news(
-            query_type="sector",
-            query="oil-gas",
-            start_date="2024-01-01",
-            limit=3
-        )
-        
-        assert result["success"] is True
-        assert "articles" in result
-        assert "metadata" in result
-        assert len(result["articles"]) <= 3
-        assert result["metadata"]["query_type"] == "sector"
-        
-    def test_get_market_news_invalid_query_type(self):
-        """Test get_market_news with invalid query type."""
-        # RED: This test should fail since get_market_news doesn't exist yet
-        result = self.provider.get_market_news(
-            query_type="invalid_type",
-            query="test"
-        )
-        
-        assert result["success"] is False
-        assert "error" in result
-        assert result["error"]["code"] == "INVALID_PARAMETERS"
-        
-    def test_get_market_news_default_limit(self):
-        """Test get_market_news with default limit."""
-        # RED: This test should fail since get_market_news doesn't exist yet
-        result = self.provider.get_market_news(
-            query_type="market"
-        )
-        
-        assert result["success"] is True
-        assert "articles" in result
-        assert len(result["articles"]) <= 10  # Default limit from PRD
 
     # Stage 4: Performance & Reliability Tests
     def test_advanced_caching_with_size_limits(self):
