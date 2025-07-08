@@ -354,6 +354,163 @@ class TestStockDataProvider:
         assert result["success"] is False
         assert result["error"]["code"] == "INVALID_DATE_RANGE"
 
+    # Index Symbol Tests (NEW)
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_get_stock_chart_data_nsei_index(self, mock_ticker):
+        """Test get_stock_chart_data with ^NSEI (Nifty 50) index."""
+        # Mock the yfinance ticker
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sample index data
+        sample_data = pd.DataFrame({
+            'Open': [22450.50, 22460.25],
+            'High': [22465.75, 22470.50],
+            'Low': [22445.00, 22455.25],
+            'Close': [22460.25, 22455.75],
+            'Volume': [0, 0]  # Indices typically have 0 volume
+        }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        result = self.provider.get_stock_chart_data(
+            symbol="^NSEI",
+            start_date=self.sample_date_start,
+            end_date=self.sample_date_end,
+            interval="1h"
+        )
+        
+        # Expected response structure
+        assert result["success"] is True
+        assert "data" in result
+        assert "metadata" in result
+        assert len(result["data"]) > 0
+        
+        # Check that symbol normalization works correctly for indices
+        assert result["metadata"]["symbol"] == "^NSEI"  # Should NOT have .NS suffix
+        
+        # Verify that Yahoo Finance API was called with correct symbol
+        mock_ticker.assert_called_with("^NSEI")
+        
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_get_stock_chart_data_nsebank_index(self, mock_ticker):
+        """Test get_stock_chart_data with ^NSEBANK (Bank Nifty) index."""
+        # Mock the yfinance ticker
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sample bank index data
+        sample_data = pd.DataFrame({
+            'Open': [48450.50, 48460.25],
+            'High': [48465.75, 48470.50],
+            'Low': [48445.00, 48455.25],
+            'Close': [48460.25, 48455.75],
+            'Volume': [0, 0]
+        }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        result = self.provider.get_stock_chart_data(
+            symbol="^NSEBANK",
+            start_date=self.sample_date_start,
+            end_date=self.sample_date_end,
+            interval="1h"
+        )
+        
+        assert result["success"] is True
+        assert result["metadata"]["symbol"] == "^NSEBANK"
+        mock_ticker.assert_called_with("^NSEBANK")
+        
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_get_stock_chart_data_multiple_indices(self, mock_ticker):
+        """Test get_stock_chart_data with various NSE indices."""
+        # Mock the yfinance ticker
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sample data
+        sample_data = pd.DataFrame({
+            'Open': [15450.50, 15460.25],
+            'High': [15465.75, 15470.50],
+            'Low': [15445.00, 15455.25],
+            'Close': [15460.25, 15455.75],
+            'Volume': [0, 0]
+        }, index=pd.date_range('2024-01-01 10:00:00+05:30', periods=2, freq='1h'))
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        # Test various NSE indices
+        indices = ["^NSEI", "^NSEBANK", "^NSEIT", "^NSEAUTO", "^NSEFMCG"]
+        
+        for index_symbol in indices:
+            result = self.provider.get_stock_chart_data(
+                symbol=index_symbol,
+                start_date=self.sample_date_start,
+                end_date=self.sample_date_end,
+                interval="1h"
+            )
+            
+            assert result["success"] is True
+            assert result["metadata"]["symbol"] == index_symbol
+            
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_calculate_technical_indicator_for_index(self, mock_ticker):
+        """Test technical indicator calculation for index symbols."""
+        # Mock the yfinance ticker with sufficient data for RSI
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sample index data with 20 points
+        price_data = [22450.50 + i*10 for i in range(20)]
+        sample_data = pd.DataFrame({
+            'Open': price_data,
+            'High': [p + 50 for p in price_data],
+            'Low': [p - 50 for p in price_data],
+            'Close': price_data,
+            'Volume': [0] * 20  # Indices have 0 volume
+        }, index=pd.date_range('2024-01-01', periods=20, freq='D'))
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        result = self.provider.calculate_technical_indicator(
+            symbol="^NSEI",
+            indicator="RSI",
+            start_date="2024-01-01",
+            end_date="2024-01-20",
+            interval="1d",
+            params={"period": 14}
+        )
+        
+        assert result["success"] is True
+        assert result["data"]["indicator"] == "RSI"
+        assert result["metadata"]["symbol"] == "^NSEI"
+        
+    def test_normalize_symbol_with_indices(self):
+        """Test symbol normalization for index symbols."""
+        # Test that index symbols starting with ^ don't get .NS suffix
+        assert self.provider._normalize_symbol("^NSEI") == "^NSEI"
+        assert self.provider._normalize_symbol("^nsei") == "^NSEI"
+        assert self.provider._normalize_symbol("^NSEBANK") == "^NSEBANK"
+        assert self.provider._normalize_symbol("^NSEIT") == "^NSEIT"
+        
+        # Test that stock symbols still get .NS suffix
+        assert self.provider._normalize_symbol("RELIANCE") == "RELIANCE.NS"
+        assert self.provider._normalize_symbol("reliance") == "RELIANCE.NS"
+        assert self.provider._normalize_symbol("RELIANCE.NS") == "RELIANCE.NS"
+        
+    def test_index_symbol_validation(self):
+        """Test validation of index symbols in error messages."""
+        result = self.provider.get_stock_chart_data(
+            symbol="INVALID_SYMBOL",
+            start_date=self.sample_date_start,
+            end_date=self.sample_date_end
+        )
+        
+        # Should include index examples in error message
+        assert result["success"] is False
+        assert "^NSEI" in result["error"]["details"]["suggestion"]
+        assert "^NSEBANK" in result["error"]["details"]["suggestion"]
+
         
         
         

@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 class GetStockChartDataArgs(BaseModel):
     """Arguments for get_stock_chart_data tool."""
-    symbol: str = Field(description="NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS')")
+    symbol: str = Field(description="NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS') or index (e.g., '^NSEI', '^NSEBANK')")
     start_date: str = Field(description="Start date in ISO format (YYYY-MM-DD)")
     end_date: str = Field(description="End date in ISO format (YYYY-MM-DD)")
     interval: str = Field(default="1h", description="Time interval (1m, 5m, 15m, 30m, 1h, 1d, 1wk, 1mo)")
@@ -32,7 +32,7 @@ class GetStockChartDataArgs(BaseModel):
 
 class CalculateTechnicalIndicatorArgs(BaseModel):
     """Arguments for calculate_technical_indicator tool."""
-    symbol: str = Field(description="NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS')")
+    symbol: str = Field(description="NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS') or index (e.g., '^NSEI', '^NSEBANK')")
     indicator: str = Field(description="Technical indicator name (e.g., 'RSI', 'MACD', 'SMA')")
     start_date: str = Field(description="Start date in ISO format (YYYY-MM-DD)")
     end_date: str = Field(description="End date in ISO format (YYYY-MM-DD)")
@@ -400,13 +400,13 @@ class TradingMCPServer:
         return [
             Tool(
                 name="get_stock_chart_data",
-                description="Retrieve OHLC stock chart data for NSE stocks",
+                description="Retrieve OHLC chart data for NSE stocks and indices",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "symbol": {
                             "type": "string",
-                            "description": "NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS')"
+                            "description": "NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS') or index (e.g., '^NSEI', '^NSEBANK')"
                         },
                         "start_date": {
                             "type": "string",
@@ -427,13 +427,13 @@ class TradingMCPServer:
             ),
             Tool(
                 name="calculate_technical_indicator",
-                description="Calculate technical indicators for NSE stocks",
+                description="Calculate technical indicators for NSE stocks and indices",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "symbol": {
                             "type": "string",
-                            "description": "NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS')"
+                            "description": "NSE stock symbol (e.g., 'RELIANCE' or 'RELIANCE.NS') or index (e.g., '^NSEI', '^NSEBANK')"
                         },
                         "indicator": {
                             "type": "string",

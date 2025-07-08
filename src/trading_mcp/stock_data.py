@@ -19,10 +19,11 @@ from .logging_config import (
 
 class StockDataProvider:
     """
-    Provides stock market data for NSE-listed stocks.
+    Provides stock market data for NSE-listed stocks and indices.
     
     This class handles fetching OHLC data, validation, caching,
-    and error handling for stock data requests.
+    and error handling for stock data and index requests.
+    Supports both individual stocks (e.g., RELIANCE) and market indices (e.g., ^NSEI).
     """
     
     def __init__(self):
@@ -80,10 +81,10 @@ class StockDataProvider:
         request_id: str = None
     ) -> Dict[str, Any]:
         """
-        Retrieve OHLC data for a specified stock symbol.
+        Retrieve OHLC data for a specified stock symbol or index.
         
         Args:
-            symbol: NSE stock symbol (e.g., "RELIANCE" or "RELIANCE.NS")
+            symbol: NSE stock symbol (e.g., "RELIANCE" or "RELIANCE.NS") or index (e.g., "^NSEI", "^NSEBANK")
             start_date: Start date in ISO format (YYYY-MM-DD)
             end_date: End date in ISO format (YYYY-MM-DD)
             interval: Time interval for data points
@@ -286,10 +287,10 @@ class StockDataProvider:
         request_id: str = None
     ) -> Dict[str, Any]:
         """
-        Calculate technical indicators for a specified stock symbol.
+        Calculate technical indicators for a specified stock symbol or index.
         
         Args:
-            symbol: NSE stock symbol (e.g., "RELIANCE" or "RELIANCE.NS")
+            symbol: NSE stock symbol (e.g., "RELIANCE" or "RELIANCE.NS") or index (e.g., "^NSEI", "^NSEBANK")
             indicator: Indicator name (e.g., "RSI", "MACD", "SMA")
             start_date: Start date in ISO format (YYYY-MM-DD)
             end_date: End date in ISO format (YYYY-MM-DD)
@@ -539,16 +540,16 @@ class StockDataProvider:
                 }
             }
         
-        # Check if symbol looks like a valid NSE symbol
+        # Check if symbol looks like a valid NSE symbol or index
         if symbol.upper() == "INVALID_SYMBOL":
             return {
                 "valid": False,
                 "error": {
                     "code": "INVALID_SYMBOL",
-                    "message": f"The symbol '{symbol}' is not a valid NSE stock symbol",
+                    "message": f"The symbol '{symbol}' is not a valid NSE stock symbol or index",
                     "details": {
                         "provided_symbol": symbol,
-                        "suggestion": "Please provide a valid NSE stock symbol like 'RELIANCE' or 'TCS'"
+                        "suggestion": "Please provide a valid NSE stock symbol like 'RELIANCE' or 'TCS', or index like '^NSEI' or '^NSEBANK'"
                     }
                 }
             }
@@ -601,8 +602,19 @@ class StockDataProvider:
         return {"valid": True}
     
     def _normalize_symbol(self, symbol: str) -> str:
-        """Normalize symbol to include .NS suffix for Yahoo Finance."""
+        """
+        Normalize symbol for Yahoo Finance API.
+        - NSE stocks: Add .NS suffix (e.g., RELIANCE -> RELIANCE.NS)
+        - NSE indices: Keep ^ prefix without .NS suffix (e.g., ^NSEI remains ^NSEI)
+        - BSE indices: Keep ^ prefix without .NS suffix (e.g., ^BSESN remains ^BSESN)
+        """
         symbol = symbol.upper()
+        
+        # Index symbols (starting with ^) should not get .NS suffix
+        if symbol.startswith('^'):
+            return symbol
+        
+        # Stock symbols need .NS suffix for NSE
         if not symbol.endswith('.NS'):
             symbol += '.NS'
         return symbol
