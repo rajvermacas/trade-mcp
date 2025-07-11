@@ -372,30 +372,55 @@ This maps the specific TradingMCPServer implementation to the general MCP Server
 
 | General MCP Method | TradingMCPServer Method | Code Location |
 |-------------------|-------------------------|---------------|
-| `main()` | `main()` | Line ~480 |
-| `setupTransport()` | `mcp.server.stdio.stdio_server()` | Line ~459 |
-| `registerHandlers()` | `_setup_tools()` | Line ~46-84 |
-| `startListening()` | `server.run()` | Line ~465 |
+| `main()` | `main()` | Line 528-531 |
+| `setupTransport()` | `mcp.server.stdio.stdio_server()` | Line 492 |
+| `registerHandlers()` | `_setup_tools()` | Line 62-110 |
+| `startListening()` | `server.run()` | Line 498 |
 
 **TradingMCPServer Startup Flow:**
 ```python
-# 1. Entry point
+# 1. Entry point (line 528)
 async def main():
     server = TradingMCPServer()  # 2. Initialize server
     await server.run()           # 3. Start server
 
-# 2. Server initialization
+# 2. Server initialization (line 52)
 def __init__(self):
     self.server = Server("trading-mcp")     # Create MCP server
     self.stock_provider = StockDataProvider()  # Initialize data provider
     self._setup_tools()                     # Register handlers
 
-# 3. Handler registration
+# 3. Handler registration (line 62)
 def _setup_tools(self):
-    @self.server.list_tools()     # Register list_tools handler
-    @self.server.list_resources() # Register list_resources handler  
-    @self.server.call_tool()      # Register call_tool handler
+    @self.server.list_tools()     # Register list_tools handler (line 65)
+    @self.server.list_resources() # Register list_resources handler (line 70)
+    @self.server.list_prompts()   # Register list_prompts handler (line 75)
+    @self.server.call_tool()      # Register call_tool handler (line 80)
 ```
+
+### Detailed Server Initialization Process
+
+**Step 1: Configuration and Logging Setup**
+- Module-level `configure_from_env()` called (line 21)
+- Logger initialization with `get_logger(__name__)` (line 22)
+
+**Step 2: Server Object Creation**
+- `TradingMCPServer()` constructor called (line 52)
+- Creates MCP Server instance with name "trading-mcp" (line 54)
+- Initializes `StockDataProvider` instance (line 55)
+- Calls `_setup_tools()` for handler registration (line 56)
+
+**Step 3: Handler Registration via Decorators**
+- `@self.server.list_tools()` → `handle_list_tools()` (line 65-68)
+- `@self.server.list_resources()` → `handle_list_resources()` (line 70-73)
+- `@self.server.list_prompts()` → `handle_list_prompts()` (line 75-78)
+- `@self.server.call_tool()` → `handle_tool_call()` (line 80-110)
+
+**Step 4: Server Startup**
+- `run()` method called with stdio transport (line 478)
+- Creates stdio server context manager (line 492)
+- Initializes with `InitializationOptions` (line 501-506)
+- Begins listening for MCP protocol messages
 
 ---
 
@@ -477,33 +502,67 @@ def get_tools(self) -> List[Tool]:
 
 | General MCP Method | TradingMCPServer Method | Lines |
 |-------------------|-------------------------|-------|
-| `handleCallTool()` | `handle_tool_call()` | 84-105 |
-| `validateToolParams()` | `GetStockChartDataArgs(**arguments)` | 110, 207 |
-| `executeToolFunction()` | `stock_provider.get_stock_chart_data()` | 135-141 |
-| `sendResponse()` | `TextContent(text=json.dumps(result))` | 151-155 |
+| `handleCallTool()` | `handle_tool_call()` | 80-110 |
+| `validateToolParams()` | `GetStockChartDataArgs(**arguments)` | 124, 234 |
+| `executeToolFunction()` | `stock_provider.get_stock_chart_data()` | 158-164 |
+| `sendResponse()` | `TextContent(text=json.dumps(result))` | 179-184 |
 
 **Detailed Tool Execution Flow:**
 ```python
-# 1. Route to specific handler
+# 1. Route to specific handler (line 80)
 async def handle_tool_call(name: str, arguments: dict):
     if name == "get_stock_chart_data":
         return await self._handle_get_stock_chart_data(arguments)
+    elif name == "calculate_technical_indicator":
+        return await self._handle_calculate_technical_indicator(arguments)
 
-# 2. Validate parameters  
+# 2. Validate parameters (line 124)
 async def _handle_get_stock_chart_data(self, arguments: dict):
     validated_args = GetStockChartDataArgs(**arguments)  # Pydantic validation
     
-# 3. Execute tool logic
+# 3. Generate request tracking (line 141-142)
+    request_id = str(uuid.uuid4())
+    start_time = time.time()
+    
+# 4. Log incoming request (line 145-155)
+    log_tool_call(logger, tool_name="get_stock_chart_data", ...)
+    
+# 5. Execute tool logic (line 158-164)
     result = self.stock_provider.get_stock_chart_data(
         symbol=validated_args.symbol,
         start_date=validated_args.start_date,
         end_date=validated_args.end_date,
-        interval=validated_args.interval
+        interval=validated_args.interval,
+        request_id=request_id
     )
     
-# 4. Format and return response
+# 6. Log response metrics (line 166-176)
+    response_time = (time.time() - start_time) * 1000
+    log_mcp_response(logger, method="get_stock_chart_data", ...)
+    
+# 7. Format and return response (line 179-184)
     return [TextContent(type="text", text=json.dumps(result, indent=2))]
 ```
+
+### Complete Tool Handler Method Structure
+
+**get_stock_chart_data Handler (`_handle_get_stock_chart_data` - line 112):**
+1. Parameter validation using `GetStockChartDataArgs` (line 124)
+2. Request ID generation and timing start (line 141-142)
+3. Structured logging of incoming request (line 145-155)
+4. Stock data provider execution (line 158-164)
+5. Response time calculation and logging (line 166-176)
+6. JSON response formatting (line 179-184)
+7. Exception handling with detailed error logging (line 186-220)
+
+**calculate_technical_indicator Handler (`_handle_calculate_technical_indicator` - line 222):**
+1. Parameter validation using `CalculateTechnicalIndicatorArgs` (line 234)
+2. Request ID generation and timing start (line 251-252)
+3. Structured logging of incoming request (line 255-267)
+4. Technical indicator calculation (line 270-278)
+5. Response time calculation and logging (line 280-290)
+6. JSON response formatting (line 293-298)
+7. Exception handling with detailed error logging (line 300-336)
 
 ---
 
@@ -588,7 +647,56 @@ TextContent(json.dumps(result))
 
 ---
 
-## 8. What MCP SDK Handles vs Custom Code
+## 8. Supporting Methods and Utilities
+
+### Method Execution Context
+
+**Direct Access Methods (for testing):**
+- `fetch_stock_chart_data()` (line 339-363) - Direct access to stock data
+- `compute_technical_indicator()` (line 365-395) - Direct access to indicators
+
+**Configuration Methods:**
+- `get_tools()` (line 398-464) - Returns tool definitions with JSON schemas
+- `get_resources()` (line 466-468) - Returns empty resources list
+- `get_capabilities()` (line 470-476) - Returns server capabilities
+
+**Pydantic Models for Validation:**
+- `GetStockChartDataArgs` (line 25-31) - Validates stock data parameters
+- `CalculateTechnicalIndicatorArgs` (line 33-41) - Validates indicator parameters
+
+### Request Lifecycle Methods
+
+**Per-Request Execution Flow:**
+```python
+# 1. MCP client request received
+handle_tool_call(name, arguments)
+
+# 2. Route to handler
+if name == "get_stock_chart_data":
+    _handle_get_stock_chart_data(arguments)
+
+# 3. Validate and track
+GetStockChartDataArgs(**arguments)  # Pydantic validation
+request_id = str(uuid.uuid4())      # Generate tracking ID
+start_time = time.time()            # Start timing
+
+# 4. Log request
+log_tool_call(logger, tool_name, symbol, params, request_id)
+
+# 5. Execute business logic
+stock_provider.get_stock_chart_data(...)
+
+# 6. Log response
+response_time = (time.time() - start_time) * 1000
+log_mcp_response(logger, method, response_time, success, request_id)
+
+# 7. Format response
+TextContent(type="text", text=json.dumps(result, indent=2))
+```
+
+---
+
+## 9. What MCP SDK Handles vs Custom Code
 
 ### MCP SDK Handles Automatically:
 - Message parsing (`parseMessage()`)
@@ -596,12 +704,58 @@ TextContent(json.dumps(result))
 - Connection management (`onConnection()`)
 - Initialize handshake (`handleInitialize()`)
 - JSON-RPC transport
+- Stdio stream management
+- Request/response correlation
 
 ### TradingMCPServer Custom Implementation:
 - Tool definitions (`get_tools()`)
-- Parameter validation (`GetStockChartDataArgs`)
+- Parameter validation (`GetStockChartDataArgs`, `CalculateTechnicalIndicatorArgs`)
 - Business logic (`stock_provider` methods)
 - Error formatting (custom error responses)
 - Logging (`log_tool_call`, `log_mcp_response`)
+- Request tracking (UUID generation, timing)
+- Response formatting (JSON structure)
 
 The TradingMCPServer focuses on **business logic** while the MCP SDK handles **protocol mechanics**.
+
+---
+
+## 10. Complete Method Execution Order
+
+### Server Startup Sequence:
+```
+1. main() (528)
+2. TradingMCPServer.__init__() (52)
+3. Server("trading-mcp") (54)
+4. StockDataProvider() (55)
+5. _setup_tools() (56)
+6. @server.list_tools() decorator (65)
+7. @server.list_resources() decorator (70)
+8. @server.list_prompts() decorator (75)
+9. @server.call_tool() decorator (80)
+10. run() (478)
+11. stdio_server() context (492)
+12. server.run() with InitializationOptions (498)
+```
+
+### Per-Request Execution (get_stock_chart_data):
+```
+1. handle_tool_call() (80)
+2. _handle_get_stock_chart_data() (112)
+3. GetStockChartDataArgs(**arguments) (124)
+4. uuid.uuid4() (141)
+5. time.time() (142)
+6. log_tool_call() (145)
+7. stock_provider.get_stock_chart_data() (158)
+8. response_time calculation (166)
+9. log_mcp_response() (170)
+10. TextContent(json.dumps(result)) (179)
+```
+
+### Error Handling Flow:
+```
+1. Exception caught in try/except (186)
+2. logger.error() with structured data (189)
+3. Error response dict creation (202)
+4. TextContent(json.dumps(error_result)) (215)
+```
