@@ -5,11 +5,93 @@ A Model Context Protocol (MCP) server that provides Indian stock market data to 
 ## Features
 
 - **Stock Data Access**: Real-time NSE stock data via Yahoo Finance
+- **Technical Indicators**: Advanced indicators including Enhanced Supertrend
 - **MCP Protocol**: Full compatibility with Claude Desktop and other MCP clients
 - **Smart Caching**: 5-minute TTL cache for improved performance
 - **Comprehensive Logging**: Production-ready logging system for debugging
 - **Error Handling**: Structured error responses with detailed context
 - **Input Validation**: Robust validation for symbols, dates, and intervals
+
+## Technical Indicators
+
+The server supports multiple technical indicators through the `calculate_technical_indicator` tool:
+
+### Enhanced Supertrend
+
+The Enhanced Supertrend is a sophisticated trading indicator that combines multiple filters for improved signal quality:
+
+**Features:**
+- Traditional Supertrend calculation with ATR-based dynamic bands
+- Volume confirmation filter to validate signals
+- RSI momentum filter to avoid overbought/oversold conditions
+- ML-based signal strength scoring (0-8 scale)
+- Buy/sell signal generation with multiple confirmations
+
+**Parameters:**
+- `atr_period` (default: 10): ATR calculation period
+- `st_multiplier` (default: 3.0): Supertrend multiplier for band calculation
+- `rsi_period` (default: 14): RSI calculation period
+- `volume_period` (default: 20): Volume moving average period
+- `volume_threshold` (default: 1.5): Volume surge threshold multiplier
+
+**Usage Example:**
+```json
+{
+  "tool": "calculate_technical_indicator",
+  "arguments": {
+    "symbol": "RELIANCE",
+    "indicator": "ENHANCED_SUPERTREND",
+    "start_date": "2024-01-01",
+    "end_date": "2024-03-01",
+    "interval": "1d",
+    "params": {
+      "atr_period": 10,
+      "st_multiplier": 3.0,
+      "rsi_period": 14,
+      "volume_period": 20,
+      "volume_threshold": 1.5
+    }
+  }
+}
+```
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "data": {
+    "indicator": "ENHANCED_SUPERTREND",
+    "values": [
+      {
+        "timestamp": "2024-01-15T00:00:00+05:30",
+        "supertrend": 1294.6671,
+        "trend": 1,
+        "signal_strength": 6.5,
+        "volume_surge": false,
+        "rsi": 65.23,
+        "buy_signal": false,
+        "sell_signal": false,
+        "atr": 27.296
+      }
+    ]
+  }
+}
+```
+
+**Signal Interpretation:**
+- `trend`: 1 for uptrend, -1 for downtrend
+- `signal_strength`: 0-8 scale (6+ recommended for trading)
+- `buy_signal`/`sell_signal`: High-confidence trade signals
+- `volume_surge`: Volume confirmation for signal validity
+
+### Other Supported Indicators
+
+- **RSI**: Relative Strength Index
+- **SMA**: Simple Moving Average  
+- **EMA**: Exponential Moving Average
+- **MACD**: Moving Average Convergence Divergence
+- **BBANDS**: Bollinger Bands
+- **ATR**: Average True Range
 
 ## Quick Start
 
@@ -260,7 +342,8 @@ resources/                 # Documentation and outputs
 
 ## Roadmap
 
-- **Stage 2**: Technical indicators (RSI, MACD, Moving Averages)
+- **Stage 1**: ✅ Stock data access and MCP protocol integration
+- **Stage 2**: ✅ Technical indicators (Enhanced Supertrend, RSI, MACD, Moving Averages)
 - **Stage 3**: Market news integration
 - **Stage 4**: Performance optimizations
 - **Stage 5**: Advanced features (options, futures, portfolio tracking)

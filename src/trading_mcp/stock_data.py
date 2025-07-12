@@ -5,6 +5,7 @@ Stock data provider for fetching market data from Yahoo Finance.
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
+import numpy as np
 import time
 import threading
 import psutil
@@ -15,6 +16,7 @@ from cachetools import LRUCache
 from .logging_config import (
     get_logger, log_cache_event, log_api_call
 )
+from .indicators import EnhancedSupertrendIndicator
 
 
 class StockDataProvider:
@@ -404,6 +406,26 @@ class StockDataProvider:
                             "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%S+05:30"),
                             "value": round(float(value), 4)
                         })
+            elif isinstance(indicator_result, pd.DataFrame):
+                # Handle Enhanced Supertrend DataFrame result
+                for timestamp, row in indicator_result.iterrows():
+                    value_dict = {
+                        "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%S+05:30")
+                    }
+                    # Add all columns from the DataFrame
+                    for col in indicator_result.columns:
+                        val = row[col]
+                        if pd.notna(val):
+                            if isinstance(val, (bool, np.bool_)):
+                                value_dict[col] = bool(val)
+                            elif isinstance(val, (int, np.integer)):
+                                value_dict[col] = int(val)
+                            else:
+                                value_dict[col] = round(float(val), 4)
+                        else:
+                            # Include NaN values as null for completeness
+                            value_dict[col] = None
+                    values.append(value_dict)
             
             response = {
                 "success": True,
@@ -477,7 +499,7 @@ class StockDataProvider:
             return basic_validation
         
         # Validate indicator name
-        supported_indicators = ["RSI", "SMA", "EMA", "MACD", "BBANDS", "ATR"]
+        supported_indicators = ["RSI", "SMA", "EMA", "MACD", "BBANDS", "ATR", "ENHANCED_SUPERTREND"]
         if indicator.upper() not in supported_indicators:
             return {
                 "valid": False,
@@ -521,11 +543,18 @@ class StockDataProvider:
             elif indicator == "ATR":
                 period = params.get("period", 14)
                 return ta.atr(df['High'], df['Low'], df['Close'], length=period)
+            elif indicator == "ENHANCED_SUPERTREND":
+                return self._calculate_enhanced_supertrend(df, params)
             else:
                 return None
         except Exception as e:
             self.logger.error(f"Error calculating {indicator}: {str(e)}", exc_info=True)
             return None
+    
+    def _calculate_enhanced_supertrend(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
+        """Calculate Enhanced Supertrend indicator using dedicated module."""
+        indicator = EnhancedSupertrendIndicator()
+        return indicator.calculate(df, params)
     
     def _validate_inputs(self, symbol: str, start_date: str, end_date: str, interval: str, request_id: str = None) -> Dict[str, Any]:
         """Validate input parameters."""

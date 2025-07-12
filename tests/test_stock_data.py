@@ -755,3 +755,146 @@ class TestStockDataProvider:
         assert "active_connections" in pool_stats
         assert "max_connections" in pool_stats
         assert pool_stats["active_connections"] <= pool_stats["max_connections"]
+    
+    @patch('trading_mcp.stock_data.yf.Ticker')
+    def test_calculate_technical_indicator_enhanced_supertrend(self, mock_ticker):
+        """Test calculate_technical_indicator with Enhanced Supertrend."""
+        # Mock the yfinance ticker
+        mock_ticker_instance = Mock()
+        mock_ticker.return_value = mock_ticker_instance
+        
+        # Create sufficient sample data for Enhanced Supertrend (need at least 30 periods)
+        dates = pd.date_range('2024-01-01', periods=40, freq='1d')
+        base_price = 2500.0
+        sample_data = pd.DataFrame({
+            'Open': [base_price + i * 5 + 2 for i in range(40)],
+            'High': [base_price + i * 5 + 10 for i in range(40)],
+            'Low': [base_price + i * 5 - 5 for i in range(40)],
+            'Close': [base_price + i * 5 for i in range(40)],
+            'Volume': [1000000 + i * 10000 for i in range(40)]
+        }, index=dates)
+        
+        mock_ticker_instance.history.return_value = sample_data
+        
+        result = self.provider.calculate_technical_indicator(
+            symbol="RELIANCE",
+            indicator="ENHANCED_SUPERTREND",
+            start_date="2024-01-01",
+            end_date="2024-02-10",
+            interval="1d"
+        )
+        
+        # Check successful response
+        assert result["success"] is True
+        assert result["data"]["indicator"] == "ENHANCED_SUPERTREND"
+        assert len(result["data"]["values"]) > 0
+        
+        # Check that Enhanced Supertrend specific fields are present
+        first_value = result["data"]["values"][0]
+        expected_fields = [
+            "timestamp", "supertrend", "trend", "signal_strength", 
+            "volume_surge", "rsi", "buy_signal", "sell_signal", "atr"
+        ]
+        for field in expected_fields:
+            assert field in first_value, f"Missing field: {field}"
+        
+        # Check data types
+        assert isinstance(first_value["supertrend"], float)
+        assert isinstance(first_value["trend"], int)
+        assert isinstance(first_value["signal_strength"], float)
+        assert isinstance(first_value["volume_surge"], bool)
+        assert first_value["rsi"] is None or isinstance(first_value["rsi"], float)  # RSI can be None initially
+        assert isinstance(first_value["buy_signal"], bool)
+        assert isinstance(first_value["sell_signal"], bool)
+        assert isinstance(first_value["atr"], float)
+        
+        # Check value ranges
+        assert first_value["trend"] in [1, -1]
+        assert 0 <= first_value["signal_strength"] <= 8
+        if first_value["rsi"] is not None:
+            assert 0 <= first_value["rsi"] <= 100
+        
+    def test_calculate_technical_indicator_enhanced_supertrend_with_params(self):
+        """Test Enhanced Supertrend with custom parameters."""
+        with patch('trading_mcp.stock_data.yf.Ticker') as mock_ticker:
+            # Mock setup
+            mock_ticker_instance = Mock()
+            mock_ticker.return_value = mock_ticker_instance
+            
+            # Create sample data
+            dates = pd.date_range('2024-01-01', periods=50, freq='1d')
+            sample_data = pd.DataFrame({
+                'Open': [2500 + i for i in range(50)],
+                'High': [2510 + i for i in range(50)],
+                'Low': [2490 + i for i in range(50)],
+                'Close': [2500 + i for i in range(50)],
+                'Volume': [1000000] * 50
+            }, index=dates)
+            
+            mock_ticker_instance.history.return_value = sample_data
+            
+            # Test with custom parameters
+            custom_params = {
+                'atr_period': 14,
+                'st_multiplier': 2.5,
+                'rsi_period': 21,
+                'volume_period': 15,
+                'volume_threshold': 2.0
+            }
+            
+            result = self.provider.calculate_technical_indicator(
+                symbol="RELIANCE",
+                indicator="ENHANCED_SUPERTREND",
+                start_date="2024-01-01",
+                end_date="2024-02-20",
+                interval="1d",
+                params=custom_params
+            )
+            
+            assert result["success"] is True
+            assert result["data"]["parameters"] == custom_params
+    
+    def test_calculate_technical_indicator_enhanced_supertrend_insufficient_data(self):
+        """Test Enhanced Supertrend with insufficient data."""
+        with patch('trading_mcp.stock_data.yf.Ticker') as mock_ticker:
+            # Mock setup
+            mock_ticker_instance = Mock()
+            mock_ticker.return_value = mock_ticker_instance
+            
+            # Create insufficient data (only 5 periods)
+            dates = pd.date_range('2024-01-01', periods=5, freq='1d')
+            sample_data = pd.DataFrame({
+                'Open': [2500] * 5,
+                'High': [2510] * 5,
+                'Low': [2490] * 5,
+                'Close': [2500] * 5,
+                'Volume': [1000000] * 5
+            }, index=dates)
+            
+            mock_ticker_instance.history.return_value = sample_data
+            
+            result = self.provider.calculate_technical_indicator(
+                symbol="RELIANCE",
+                indicator="ENHANCED_SUPERTREND",
+                start_date="2024-01-01",
+                end_date="2024-01-06",
+                interval="1d"
+            )
+            
+            # Should return error due to insufficient data
+            assert result["success"] is False
+            assert "insufficient data" in result["error"]["message"].lower()
+    
+    def test_enhanced_supertrend_indicator_included_in_supported_list(self):
+        """Test that ENHANCED_SUPERTREND is included in supported indicators."""
+        # Test validation with ENHANCED_SUPERTREND
+        validation_result = self.provider._validate_indicator_inputs(
+            symbol="RELIANCE",
+            indicator="ENHANCED_SUPERTREND",
+            start_date="2024-01-01",
+            end_date="2024-01-02",
+            interval="1d",
+            params={}
+        )
+        
+        assert validation_result["valid"] is True
