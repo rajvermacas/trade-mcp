@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:pandas-ta.dev)"
+    ],
+    "deny": []
+  }
+}
