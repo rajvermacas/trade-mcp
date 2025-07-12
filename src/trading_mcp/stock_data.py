@@ -16,7 +16,8 @@ from cachetools import LRUCache
 from .logging_config import (
     get_logger, log_cache_event, log_api_call
 )
-from .indicators import EnhancedSupertrendIndicator
+from .indicators import EnhancedSupertrendIndicator, IndicatorRegistry
+from .validation_utils import validate_inputs, normalize_symbol
 
 
 class StockDataProvider:
@@ -64,13 +65,17 @@ class StockDataProvider:
             "total_connections_created": 0
         }
         
+        # Initialize indicator registry
+        self.indicator_registry = IndicatorRegistry()
+        
         self.logger = get_logger(__name__, {"component": "stock_data_provider"})
         self.logger.info(
             "StockDataProvider initialized with Stage 4 features",
             extra={
                 "cache_ttl": self.cache_ttl,
                 "cache_max_size": 100,
-                "circuit_breaker_threshold": 5
+                "circuit_breaker_threshold": 5,
+                "supported_indicators_count": len(self.indicator_registry.get_supported_indicators())
             }
         )
     
@@ -110,7 +115,7 @@ class StockDataProvider:
         
         try:
             # Validate inputs
-            validation_result = self._validate_inputs(symbol, start_date, end_date, interval, request_id)
+            validation_result = validate_inputs(symbol, start_date, end_date, interval, request_id)
             if not validation_result["valid"]:
                 self.logger.warning(
                     f"Input validation failed for {symbol}",
@@ -126,7 +131,7 @@ class StockDataProvider:
                 }
             
             # Normalize symbol to include .NS suffix
-            normalized_symbol = self._normalize_symbol(symbol)
+            normalized_symbol = normalize_symbol(symbol)
             
             # Check cache first
             cache_key = f"{normalized_symbol}_{start_date}_{end_date}_{interval}"
@@ -472,7 +477,7 @@ class StockDataProvider:
                 "success": False,
                 "error": {
                     "code": "API_ERROR",
-                    "message": f"Failed to calculate {indicator}: {str(e)}",
+                    "message": str(e) if "insufficient data" in str(e).lower() else f"Failed to calculate {indicator}: {str(e)}",
                     "details": {
                         "symbol": symbol,
                         "indicator": indicator,
@@ -493,13 +498,13 @@ class StockDataProvider:
         request_id: str = None
     ) -> Dict[str, Any]:
         """Validate technical indicator input parameters."""
-        # First validate basic inputs using existing method
-        basic_validation = self._validate_inputs(symbol, start_date, end_date, interval, request_id)
+        # First validate basic inputs using validation utils
+        basic_validation = validate_inputs(symbol, start_date, end_date, interval, request_id)
         if not basic_validation["valid"]:
             return basic_validation
         
-        # Validate indicator name
-        supported_indicators = ["RSI", "SMA", "EMA", "MACD", "BBANDS", "ATR", "ENHANCED_SUPERTREND"]
+        # Validate indicator name using registry
+        supported_indicators = self.indicator_registry.get_supported_indicators()
         if indicator.upper() not in supported_indicators:
             return {
                 "valid": False,
@@ -516,137 +521,17 @@ class StockDataProvider:
         return {"valid": True}
     
     def _calculate_indicator(self, df: pd.DataFrame, indicator: str, params: Dict[str, Any]) -> Optional[pd.Series]:
-        """Calculate the specified technical indicator."""
-        indicator = indicator.upper()
-        
+        """Calculate the specified technical indicator using the registry."""
         try:
-            if indicator == "RSI":
-                period = params.get("period", 14)
-                return ta.rsi(df['Close'], length=period)
-            elif indicator == "SMA":
-                period = params.get("period", 20)
-                return ta.sma(df['Close'], length=period)
-            elif indicator == "EMA":
-                period = params.get("period", 20)
-                return ta.ema(df['Close'], length=period)
-            elif indicator == "MACD":
-                fast = params.get("fast", 12)
-                slow = params.get("slow", 26)
-                signal = params.get("signal", 9)
-                macd_result = ta.macd(df['Close'], fast=fast, slow=slow, signal=signal)
-                return macd_result[f'MACD_{fast}_{slow}_{signal}']
-            elif indicator == "BBANDS":
-                period = params.get("period", 20)
-                std = params.get("std", 2)
-                bbands_result = ta.bbands(df['Close'], length=period, std=std)
-                return bbands_result[f'BBM_{period}_{std}']  # Middle band (SMA)
-            elif indicator == "ATR":
-                period = params.get("period", 14)
-                return ta.atr(df['High'], df['Low'], df['Close'], length=period)
-            elif indicator == "ENHANCED_SUPERTREND":
-                return self._calculate_enhanced_supertrend(df, params)
-            else:
-                return None
+            return self.indicator_registry.calculate_indicator(df, indicator, params)
         except Exception as e:
             self.logger.error(f"Error calculating {indicator}: {str(e)}", exc_info=True)
+            # Re-raise specific errors that should be handled at higher level
+            if "insufficient data" in str(e).lower():
+                raise e
             return None
     
-    def _calculate_enhanced_supertrend(self, df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
-        """Calculate Enhanced Supertrend indicator using dedicated module."""
-        indicator = EnhancedSupertrendIndicator()
-        return indicator.calculate(df, params)
     
-    def _validate_inputs(self, symbol: str, start_date: str, end_date: str, interval: str, request_id: str = None) -> Dict[str, Any]:
-        """Validate input parameters."""
-        # Validate symbol
-        if not symbol or not isinstance(symbol, str):
-            return {
-                "valid": False,
-                "error": {
-                    "code": "INVALID_SYMBOL",
-                    "message": "Symbol must be a non-empty string",
-                    "details": {"provided_symbol": symbol}
-                }
-            }
-        
-        # Check if symbol looks like a valid NSE symbol or index
-        if symbol.upper() == "INVALID_SYMBOL":
-            return {
-                "valid": False,
-                "error": {
-                    "code": "INVALID_SYMBOL",
-                    "message": f"The symbol '{symbol}' is not a valid NSE stock symbol or index",
-                    "details": {
-                        "provided_symbol": symbol,
-                        "suggestion": "Please provide a valid NSE stock symbol like 'RELIANCE' or 'TCS', or index like '^NSEI' or '^NSEBANK'"
-                    }
-                }
-            }
-        
-        # Validate dates
-        try:
-            start_dt = datetime.fromisoformat(start_date)
-            end_dt = datetime.fromisoformat(end_date)
-            
-            if start_dt >= end_dt:
-                return {
-                    "valid": False,
-                    "error": {
-                        "code": "INVALID_DATE_RANGE",
-                        "message": "Start date must be before end date",
-                        "details": {
-                            "start_date": start_date,
-                            "end_date": end_date
-                        }
-                    }
-                }
-        except ValueError as e:
-            return {
-                "valid": False,
-                "error": {
-                    "code": "INVALID_DATE_RANGE",
-                    "message": f"Invalid date format: {str(e)}",
-                    "details": {
-                        "start_date": start_date,
-                        "end_date": end_date
-                    }
-                }
-            }
-        
-        # Validate interval
-        valid_intervals = ["1m", "5m", "15m", "30m", "1h", "1d", "1wk", "1mo"]
-        if interval not in valid_intervals:
-            return {
-                "valid": False,
-                "error": {
-                    "code": "INVALID_INTERVAL",
-                    "message": f"Invalid interval '{interval}'. Must be one of: {', '.join(valid_intervals)}",
-                    "details": {
-                        "provided_interval": interval,
-                        "valid_intervals": valid_intervals
-                    }
-                }
-            }
-        
-        return {"valid": True}
-    
-    def _normalize_symbol(self, symbol: str) -> str:
-        """
-        Normalize symbol for Yahoo Finance API.
-        - NSE stocks: Add .NS suffix (e.g., RELIANCE -> RELIANCE.NS)
-        - NSE indices: Keep ^ prefix without .NS suffix (e.g., ^NSEI remains ^NSEI)
-        - BSE indices: Keep ^ prefix without .NS suffix (e.g., ^BSESN remains ^BSESN)
-        """
-        symbol = symbol.upper()
-        
-        # Index symbols (starting with ^) should not get .NS suffix
-        if symbol.startswith('^'):
-            return symbol
-        
-        # Stock symbols need .NS suffix for NSE
-        if not symbol.endswith('.NS'):
-            symbol += '.NS'
-        return symbol
     
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cache entry is still valid."""

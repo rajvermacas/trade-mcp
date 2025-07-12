@@ -487,16 +487,18 @@ class TestStockDataProvider:
         
     def test_normalize_symbol_with_indices(self):
         """Test symbol normalization for index symbols."""
+        from trading_mcp.validation_utils import normalize_symbol
+        
         # Test that index symbols starting with ^ don't get .NS suffix
-        assert self.provider._normalize_symbol("^NSEI") == "^NSEI"
-        assert self.provider._normalize_symbol("^nsei") == "^NSEI"
-        assert self.provider._normalize_symbol("^NSEBANK") == "^NSEBANK"
-        assert self.provider._normalize_symbol("^NSEIT") == "^NSEIT"
+        assert normalize_symbol("^NSEI") == "^NSEI"
+        assert normalize_symbol("^nsei") == "^NSEI"
+        assert normalize_symbol("^NSEBANK") == "^NSEBANK"
+        assert normalize_symbol("^NSEIT") == "^NSEIT"
         
         # Test that stock symbols still get .NS suffix
-        assert self.provider._normalize_symbol("RELIANCE") == "RELIANCE.NS"
-        assert self.provider._normalize_symbol("reliance") == "RELIANCE.NS"
-        assert self.provider._normalize_symbol("RELIANCE.NS") == "RELIANCE.NS"
+        assert normalize_symbol("RELIANCE") == "RELIANCE.NS"
+        assert normalize_symbol("reliance") == "RELIANCE.NS"
+        assert normalize_symbol("RELIANCE.NS") == "RELIANCE.NS"
         
     def test_index_symbol_validation(self):
         """Test validation of index symbols in error messages."""

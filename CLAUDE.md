@@ -91,9 +91,13 @@ pip install -e .
 - Volume data handling: varies by symbol type and date (stocks always have volume, indices may have zero or non-zero volume depending on market conditions)
 
 **Technical Indicators System** (`src/trading_mcp/indicators/`):
-- Enhanced Supertrend indicator with ML-based signal strength scoring (0-8 scale)
-- Volume confirmation filter and RSI momentum filter
-- Support for traditional indicators: RSI, SMA, EMA, MACD, Bollinger Bands, ATR
+- **38+ Technical Indicators** across 5 categories (Trend, Momentum, Volatility, Volume, Custom)
+- **IndicatorRegistry** with unified interface for all indicator calculations
+- **Enhanced Supertrend** indicator with ML-based signal strength scoring (0-8 scale)
+- **pandas_ta Integration** providing industry-standard calculations
+- **Parameter Validation** with automatic type conversion and default parameter application
+- **Data Requirements Validation** ensuring proper column availability before calculation
+- Supported indicators include: RSI, SMA, EMA, WMA, DEMA, TEMA, MACD, ADX, AROON, CCI, CMO, WILLR, MFI, TRIX, ROC, BBANDS, ATR, NATR, STDDEV, AD, ADOSC, OBV, VWAP, EMV, FI, SUPERTREND, ICHIMOKU, and more
 - Configurable parameters for all indicators via the `params` field
 - Returns time-series data with buy/sell signals and trend analysis
 
