@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:gist.github.com)",
-      "WebFetch(domain:pandas-ta.dev)"
+      "WebFetch(domain:pandas-ta.dev)",
+      "mcp__context7__get-library-docs"
     ],
     "deny": []
   }

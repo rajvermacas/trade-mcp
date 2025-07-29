@@ -18,6 +18,7 @@ from .logging_config import (
 )
 from .indicators import EnhancedSupertrendIndicator, IndicatorRegistry
 from .validation_utils import validate_inputs, normalize_symbol
+from .csv_utils import write_stock_data_to_csv, write_indicator_data_to_csv
 
 
 class StockDataProvider:
@@ -220,17 +221,27 @@ class StockDataProvider:
                     "volume": int(row['Volume'])
                 })
             
-            # Create response
-            response = {
-                "success": True,
-                "data": data_points,
-                "metadata": {
+            # Write data to CSV file
+            csv_result = write_stock_data_to_csv(
+                data_points=data_points,
+                symbol=normalized_symbol,
+                metadata={
                     "symbol": normalized_symbol,
                     "interval": interval,
                     "currency": "INR",
-                    "timezone": "Asia/Kolkata",
-                    "data_points": len(data_points)
+                    "timezone": "Asia/Kolkata"
                 }
+            )
+            
+            if not csv_result["success"]:
+                return csv_result
+            
+            # Create response with file path instead of raw data
+            response = {
+                "success": True,
+                "file_path": csv_result["file_path"],
+                "filename": csv_result["filename"],
+                "metadata": csv_result["metadata"]
             }
             
             # Cache the response
@@ -344,20 +355,50 @@ class StockDataProvider:
                     "error": validation_result["error"]
                 }
             
-            # First get the stock data
-            stock_data_result = self.get_stock_chart_data(
-                symbol=symbol,
-                start_date=start_date,
-                end_date=end_date,
-                interval=interval,
-                request_id=request_id
-            )
+            # Get stock data directly without CSV output for internal processing
+            normalized_symbol = normalize_symbol(symbol)
             
-            if not stock_data_result["success"]:
-                return stock_data_result
+            # Check cache first for raw data
+            cache_key = f"{normalized_symbol}_{start_date}_{end_date}_{interval}_raw"
+            if self._is_cache_valid(cache_key):
+                cached_data = self.cache[cache_key]["data"]
+                data_points = cached_data
+            else:
+                # Fetch raw data from Yahoo Finance
+                hist_data = self._fetch_from_yahoo_with_retry(
+                    normalized_symbol, start_date, end_date, interval
+                )
+                
+                if hist_data.empty:
+                    return {
+                        "success": False,
+                        "error": {
+                            "code": "DATA_UNAVAILABLE",
+                            "message": f"No data available for symbol '{symbol}' in the specified date range",
+                            "details": {
+                                "symbol": symbol,
+                                "normalized_symbol": normalized_symbol,
+                                "start_date": start_date,
+                                "end_date": end_date
+                            }
+                        }
+                    }
+                
+                # Convert to required format
+                data_points = []
+                for index, row in hist_data.iterrows():
+                    data_points.append({
+                        "timestamp": index.strftime("%Y-%m-%dT%H:%M:%S+05:30"),
+                        "open": round(float(row['Open']), 2),
+                        "high": round(float(row['High']), 2),
+                        "low": round(float(row['Low']), 2),
+                        "close": round(float(row['Close']), 2),
+                        "volume": int(row['Volume'])
+                    })
+                
+                # Cache raw data for indicators
+                self._cache_response(cache_key, data_points)
             
-            # Convert to DataFrame for pandas_ta
-            data_points = stock_data_result["data"]
             if len(data_points) == 0:
                 return {
                     "success": False,
@@ -432,18 +473,31 @@ class StockDataProvider:
                             value_dict[col] = None
                     values.append(value_dict)
             
+            # Write indicator data to CSV file
+            indicator_data = {
+                "indicator": indicator,
+                "values": values,
+                "parameters": params
+            }
+            
+            csv_result = write_indicator_data_to_csv(
+                indicator_data=indicator_data,
+                symbol=normalized_symbol,
+                metadata={
+                    "symbol": normalized_symbol,
+                    "interval": interval
+                }
+            )
+            
+            if not csv_result["success"]:
+                return csv_result
+            
+            # Create response with file path instead of raw data
             response = {
                 "success": True,
-                "data": {
-                    "indicator": indicator,
-                    "values": values,
-                    "parameters": params
-                },
-                "metadata": {
-                    "symbol": stock_data_result["metadata"]["symbol"],
-                    "interval": interval,
-                    "data_points": len(values)
-                }
+                "file_path": csv_result["file_path"],
+                "filename": csv_result["filename"],
+                "metadata": csv_result["metadata"]
             }
             
             total_response_time = (time.time() - start_time) * 1000
